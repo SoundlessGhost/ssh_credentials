@@ -119,6 +119,8 @@ type ConfirmAction =
   | { type: "closeEditor" }
   | null;
 
+type PinnedFolder = { name: string; path: string };
+
 const EnhancedSSHManager: React.FC = () => {
   // ===== Folder Dialog Open =====
   const [folderName, setFolderName] = useState("");
@@ -181,6 +183,16 @@ const EnhancedSSHManager: React.FC = () => {
   // ===== Spinner Booting =====
   const [appBooting, setAppBooting] = useState(true);
   const restoreOnceRef = useRef(false);
+
+  // ===== Drag & Drop Pinned Folders (Quick Tabs) =====
+  const [pinnedFolders, setPinnedFolders] = useState<PinnedFolder[]>([]);
+  const [isDraggingPinned, setIsDraggingPinned] = useState(false);
+
+const dragPinnedIndexRef = useRef<number | null>(null);
+
+  const pinnedKey = connected
+    ? `ssh_pinned_folders_${credentials.username}@${credentials.host}`
+    : null;
 
   // ✅ Load saved connections from localStorage
   useEffect(() => {
@@ -325,6 +337,54 @@ const EnhancedSSHManager: React.FC = () => {
     run();
   }, []);
 
+  // ✅ Load pinned folders on mount
+  useEffect(() => {
+    if (!pinnedKey) return;
+
+    const raw = localStorage.getItem(pinnedKey);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) setPinnedFolders(parsed);
+      } catch {
+        setPinnedFolders([]);
+      }
+    } else {
+      setPinnedFolders([]);
+    }
+  }, [pinnedKey]);
+
+  // ✅ Persist pinned folders
+  useEffect(() => {
+    if (!pinnedKey) return;
+    localStorage.setItem(pinnedKey, JSON.stringify(pinnedFolders));
+  }, [pinnedFolders, pinnedKey]);
+
+  // ===== Reorder Pinned =====
+  // const reorderPinned = (fromIndex, toIndex) => {
+  //   if (fromIndex === toIndex) return;
+
+  //   setPinnedFolders((prev) => {
+  //     const next = [...prev];
+  //     const [moved] = next.splice(fromIndex, 1);
+  //     next.splice(toIndex, 0, moved);
+  //     return next;
+  //   });
+  // };
+
+  // ===== Pinned Folder =====
+  const addPinnedFolder = (folder: { name: string; path: string }) => {
+    setPinnedFolders((prev) => {
+      if (prev.some((p) => p.path === folder.path)) return prev;
+      return [...prev, { name: folder.name, path: folder.path }];
+    });
+  };
+
+  // ===== Remove Pinned Folder =====
+  const removePinnedFolder = (path: string) => {
+    setPinnedFolders((prev) => prev.filter((p) => p.path !== path));
+  };
+
   // ===== UI Alert shadcn Alert banner =====
   const [uiAlert, setUiAlert] = useState<{
     open: boolean;
@@ -338,6 +398,7 @@ const EnhancedSSHManager: React.FC = () => {
     variant: "default",
   });
 
+  // ===== Show Alert =====
   const showAlert = (
     title: string,
     description = "",
@@ -352,6 +413,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Open Confirm =====
   const openConfirm = (action: ConfirmAction, title: string, desc: string) => {
     setConfirmAction(action);
     setConfirmTitle(title);
@@ -359,6 +421,7 @@ const EnhancedSSHManager: React.FC = () => {
     setConfirmOpen(true);
   };
 
+  // ===== Close Confirm =====
   const closeConfirm = () => {
     setConfirmOpen(false);
     setConfirmAction(null);
@@ -484,6 +547,8 @@ const EnhancedSSHManager: React.FC = () => {
       if (data.success) {
         setSessionId(newSessionId);
         setConnected(true);
+
+        setPinnedFolders([]);
 
         const dir = data.currentDir || data.current_dir || "/root";
         setCurrentPath(dir);
@@ -1476,7 +1541,22 @@ const EnhancedSSHManager: React.FC = () => {
 
           {/* Tabs */}
           <div className="max-w-7xl mx-auto px-4 mt-4">
-            <div className="flex gap-2 border-b overflow-x-auto">
+            <div
+              className="flex gap-2 border-b overflow-x-auto"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const raw = e.dataTransfer.getData("application/x-ssh-folder");
+                if (!raw) return;
+                try {
+                  const folder = JSON.parse(raw);
+                  if (folder?.path && folder?.name) addPinnedFolder(folder);
+                } catch {}
+              }}
+            >
               {[
                 { id: "files" as TabType, label: "Files", icon: Folder },
                 {
@@ -1505,7 +1585,109 @@ const EnhancedSSHManager: React.FC = () => {
                   {tab.label}
                 </button>
               ))}
+
+              {pinnedFolders.map((p, idx) => (
+                <div
+                  key={p.path}
+                  className={`flex items-center border-b-2 whitespace-nowrap ${
+                    currentPath === p.path
+                      ? "border-emerald-600 text-emerald-700"
+                      : "border-transparent text-gray-600 hover:text-gray-800"
+                  }`}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+
+                    const fromIndex = dragPinnedIndexRef.current;
+                    const toIndex = idx;
+
+                    if (fromIndex === null || fromIndex === undefined) return;
+                    if (fromIndex === toIndex) return;
+
+                    setPinnedFolders((prev) => {
+                      const next = [...prev];
+                      const [moved] = next.splice(fromIndex, 1);
+                      next.splice(toIndex, 0, moved);
+                      return next;
+                    });
+
+                    // ✅ update current dragged index so it keeps moving smoothly
+                    dragPinnedIndexRef.current = toIndex;
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }}
+                  title={p.path}
+                >
+                  {/* Drag handle only */}
+                  <span
+                    className="px-2 py-2 cursor-grab active:cursor-grabbing select-none"
+                    draggable
+                    onDragStart={(e) => {
+                      dragPinnedIndexRef.current = idx;
+
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", "pinned"); // browser compat
+                      e.dataTransfer.setData(
+                        "application/x-ssh-pinned",
+                        JSON.stringify({ fromIndex: idx, path: p.path })
+                      );
+                    }}
+                    onDragEnd={() => {
+                      dragPinnedIndexRef.current = null;
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    ⠿
+                  </span>
+
+                  {/* Clickable tab */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("files");
+                      loadFiles(p.path);
+                    }}
+                    className="flex items-center gap-2 px-3 py-2"
+                  >
+                    <Folder size={18} />
+                    {p.name}
+                  </button>
+                </div>
+              ))}
             </div>
+
+            {/* Drag pinned tab here to remove */}
+            {Array.isArray(pinnedFolders) && pinnedFolders.length > 0 && (
+              <div
+                className="ml-auto px-3 py-3 text-sm mt-6 rounded font-bold border border-dashed text-gray-500 select-none"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+
+                  const raw = e.dataTransfer.getData(
+                    "application/x-ssh-pinned"
+                  );
+                  if (!raw) return;
+
+                  try {
+                    const data = JSON.parse(raw);
+                    const fromIndex = data?.fromIndex;
+
+                    if (fromIndex === null || fromIndex === undefined) return;
+
+                    setPinnedFolders((prev) =>
+                      prev.filter((_, i) => i !== fromIndex)
+                    );
+                  } catch {}
+                }}
+              >
+                ❌ Drop Here To Remove
+              </div>
+            )}
 
             {/* File Manager */}
             {activeTab === "files" && (
@@ -1576,6 +1758,15 @@ const EnhancedSSHManager: React.FC = () => {
                           else openEditor(item.path);
                         }}
                         className="flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer group"
+                        draggable={item.type === "folder"}
+                        onDragStart={(e) => {
+                          if (item.type !== "folder") return;
+                          e.dataTransfer.setData(
+                            "application/x-ssh-folder",
+                            JSON.stringify({ name: item.name, path: item.path })
+                          );
+                          e.dataTransfer.effectAllowed = "copy";
+                        }}
                       >
                         {item.type === "folder" ? (
                           <Folder size={18} className="text-blue-500" />
@@ -1905,7 +2096,6 @@ const EnhancedSSHManager: React.FC = () => {
                 </div>
               </div>
             )}
-            
           </div>
         </>
       )}
