@@ -44,7 +44,7 @@ import {
   Play,
 } from "lucide-react";
 
-const API_URL = "http://localhost:8080";
+const API_URL = "http://144.91.85.229:8080";
 
 interface SSHCredentials {
   host: string;
