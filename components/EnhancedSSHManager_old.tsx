@@ -41,10 +41,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   ClipboardPaste,
-  Play,
 } from "lucide-react";
 
-const API_URL = "http://localhost:8080";
+const API_URL = "http://144.91.85.229:8080";
 
 interface SSHCredentials {
   host: string;
@@ -193,52 +192,6 @@ const EnhancedSSHManager: React.FC = () => {
     ? `ssh_pinned_folders_${credentials.username}@${credentials.host}`
     : null;
 
-  // ===== Script Run =====
-  const [runModalOpen, setRunModalOpen] = useState(false);
-  const [runScriptPath, setRunScriptPath] = useState("");
-
-  const [runInput, setRunInput] = useState("");
-  const [runOut, setRunOut] = useState("");
-  const [runApiKey, setRunApiKey] = useState("root");
-  const [runConcurrency, setRunConcurrency] = useState(500);
-  const [runTimeout, setRunTimeout] = useState(60);
-  const [runServers, setRunServers] = useState("");
-  const [runResume, setRunResume] = useState(true);
-
-  // ===== UI Alert shadcn Alert banner =====
-  const [uiAlert, setUiAlert] = useState<{
-    open: boolean;
-    title: string;
-    description?: string;
-    variant?: "default" | "destructive";
-  }>({
-    open: false,
-    title: "",
-    description: "",
-    variant: "default",
-  });
-
-  const showAlert = (
-    title: string,
-    description = "",
-    variant: "default" | "destructive" = "default",
-    autoHideMs = 3000
-  ) => {
-    setUiAlert({ open: true, title, description, variant });
-    if (autoHideMs > 0) {
-      setTimeout(() => {
-        setUiAlert((p) => ({ ...p, open: false }));
-      }, autoHideMs);
-    }
-  };
-
-  // ===== Parent Dir =====
-  const parentDir = (p: string) => {
-    const parts = (p || "").split("/").filter(Boolean);
-    parts.pop();
-    return "/" + parts.join("/");
-  };
-
   // ✅ Load saved connections from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("ssh_connections");
@@ -269,6 +222,7 @@ const EnhancedSSHManager: React.FC = () => {
       setCurrentPath(restoredPath);
       setActiveTab(restoredTab);
 
+      // Verify session still alive by calling list
       fetch(
         `${API_URL}/api/ssh/list?session_id=${restoredSessionId}&path=${encodeURIComponent(
           restoredPath
@@ -322,6 +276,7 @@ const EnhancedSSHManager: React.FC = () => {
 
     const run = async () => {
       try {
+        // 1️⃣ Try active session restore
         const rawActive = localStorage.getItem("ssh_active_session");
         if (rawActive) {
           const parsed = JSON.parse(rawActive);
@@ -348,6 +303,7 @@ const EnhancedSSHManager: React.FC = () => {
           localStorage.removeItem("ssh_active_session");
         }
 
+        // 2️⃣ Fallback: last credentials auto-connect
         const rawLast = localStorage.getItem("last_connected_session");
         if (rawLast) {
           const last = JSON.parse(rawLast);
@@ -371,6 +327,7 @@ const EnhancedSSHManager: React.FC = () => {
           4000
         );
       } finally {
+        // ✅ spinner off ONLY after everything
         setAppBooting(false);
       }
     };
@@ -426,6 +383,42 @@ const EnhancedSSHManager: React.FC = () => {
     if (connected) loadFiles();
   }, [connected]);
 
+  // ===== Pinned Folder =====
+  const addPinnedFolder = (folder: { name: string; path: string }) => {
+    setPinnedFolders((prev) => {
+      if (prev.some((p) => p.path === folder.path)) return prev;
+      return [...prev, { name: folder.name, path: folder.path }];
+    });
+  };
+
+  // ===== UI Alert shadcn Alert banner =====
+  const [uiAlert, setUiAlert] = useState<{
+    open: boolean;
+    title: string;
+    description?: string;
+    variant?: "default" | "destructive";
+  }>({
+    open: false,
+    title: "",
+    description: "",
+    variant: "default",
+  });
+
+  // ===== Show Alert =====
+  const showAlert = (
+    title: string,
+    description = "",
+    variant: "default" | "destructive" = "default",
+    autoHideMs = 3000
+  ) => {
+    setUiAlert({ open: true, title, description, variant });
+    if (autoHideMs > 0) {
+      setTimeout(() => {
+        setUiAlert((p) => ({ ...p, open: false }));
+      }, autoHideMs);
+    }
+  };
+
   // ===== Open Confirm =====
   const openConfirm = (action: ConfirmAction, title: string, desc: string) => {
     setConfirmAction(action);
@@ -434,6 +427,7 @@ const EnhancedSSHManager: React.FC = () => {
     setConfirmOpen(true);
   };
 
+  // ===== Close Confirm =====
   const closeConfirm = () => {
     setConfirmOpen(false);
     setConfirmAction(null);
@@ -506,6 +500,7 @@ const EnhancedSSHManager: React.FC = () => {
 
     setCredentials(creds);
 
+    // migrate missing password into storage
     const updated = savedConnections.map((c) =>
       c.id === conn.id
         ? {
@@ -518,11 +513,13 @@ const EnhancedSSHManager: React.FC = () => {
     setSavedConnections(updated);
     localStorage.setItem("ssh_connections", JSON.stringify(updated));
 
+    // auto connect
     setTimeout(() => {
       handleConnectWithCreds(creds);
     }, 100);
   };
 
+  // ===== Delete connection =====
   const deleteConnection = (id: string) => {
     const updated = savedConnections.filter((c) => c.id !== id);
     setSavedConnections(updated);
@@ -588,10 +585,12 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Handle connect =====
   const handleConnect = () => {
     handleConnectWithCreds(credentials);
   };
 
+  // ===== Handle Disconnect =====
   const handleDisconnect = async () => {
     try {
       await fetch(`${API_URL}/api/ssh/disconnect?session_id=${sessionId}`, {
@@ -638,14 +637,6 @@ const EnhancedSSHManager: React.FC = () => {
         "destructive",
         5000
       );
-    }
-  };
-
-  const navigateUp = () => {
-    const parts = currentPath.split("/").filter(Boolean);
-    if (parts.length > 0) {
-      parts.pop();
-      loadFiles("/" + parts.join("/") || "/");
     }
   };
 
@@ -713,7 +704,10 @@ const EnhancedSSHManager: React.FC = () => {
         `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(
           currentPath
         )}`,
-        { method: "POST", body: formData }
+        {
+          method: "POST",
+          body: formData,
+        }
       );
 
       const data = await res.json();
@@ -741,6 +735,7 @@ const EnhancedSSHManager: React.FC = () => {
       );
     } finally {
       setLoading(false);
+      // allow re-upload same file
       e.target.value = "";
     }
   };
@@ -781,7 +776,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
-  // ===== Delete =====
+  // ===== Delete Folder =====
   const performDelete = async (path: string) => {
     try {
       const res = await fetch(
@@ -817,6 +812,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Handle Delete =====
   const handleDelete = (path: string) => {
     openConfirm(
       { type: "delete", path },
@@ -825,13 +821,14 @@ const EnhancedSSHManager: React.FC = () => {
     );
   };
 
-  // ===== Rename =====
+  // ===== Open Rename Dialog =====
   const openRenameDialog = (item: FileItem) => {
     setRenameTargetPath(item.path);
     setRenameValue(item.name);
     setRenameDialogOpen(true);
   };
 
+  // ===== Perform Rename =====
   const performRename = async () => {
     const newName = renameValue.trim();
     if (!newName) {
@@ -869,7 +866,6 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
-  // ===== Clipboard =====
   const pasteClipboard = async () => {
     if (!clipboard) return;
 
@@ -891,7 +887,7 @@ const EnhancedSSHManager: React.FC = () => {
       if (data.success) {
         showAlert("Pasted", `${baseName} copied here`);
         loadFiles();
-        setClipboard(null);
+        setClipboard(null); // optional: paste করলে clear
       } else {
         showAlert(
           "Paste failed",
@@ -904,6 +900,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Copy To Clipboard =====
   const copyToClipboard = (item: FileItem) => {
     setClipboard({
       action: "copy",
@@ -914,7 +911,7 @@ const EnhancedSSHManager: React.FC = () => {
     showAlert("Copied", `${item.name} is ready to paste`);
   };
 
-  // ===== Editor =====
+  // ===== Text Editor =====
   const openEditor = async (path: string) => {
     try {
       const res = await fetch(
@@ -929,6 +926,8 @@ const EnhancedSSHManager: React.FC = () => {
         setEditorContent(data.content || "");
         setOriginalContent(data.content || "");
         setEditorModified(false);
+
+        // ✅ THIS LINE IS THE FIX
         setActiveTab("editor");
       } else {
         showAlert(
@@ -948,6 +947,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Save Editor =====
   const saveEditorFile = async () => {
     try {
       const res = await fetch(`${API_URL}/api/ssh/write-file`, {
@@ -987,6 +987,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Close Editor =====
   const closeEditor = () => {
     if (editorModified) {
       openConfirm(
@@ -1001,27 +1002,15 @@ const EnhancedSSHManager: React.FC = () => {
     setActiveTab("files");
   };
 
-  const buildShellCommand = (cmd: string, cwd: string) => {
-    const safeCwd = (cwd || "/").replace(/'/g, "'\\''");
-    const safeCmd = (cmd || "").replace(/'/g, "'\\''");
-
-    // IMPORTANT: bash -lc runs as login shell; cd always applied
-    return `bash -lc 'cd '${safeCwd}' && ${safeCmd}'`;
-  };
-
   // ===== Terminal =====
   const executeCommand = async () => {
     if (!terminalInput.trim()) return;
 
-    const rawCommand = terminalInput.trim();
+    const command = terminalInput;
     setTerminalInput("");
-    setCommandHistory((prev) => [...prev, rawCommand]);
+    setCommandHistory((prev) => [...prev, command]);
     setHistoryIndex(-1);
-
-    // Show what user typed
-    setTerminalOutput((prev) => [...prev, `$ ${rawCommand}`]);
-
-    const cmd = buildShellCommand(rawCommand, currentPath);
+    setTerminalOutput((prev) => [...prev, `$ ${command}`]);
 
     try {
       const res = await fetch(`${API_URL}/api/ssh/execute`, {
@@ -1029,7 +1018,7 @@ const EnhancedSSHManager: React.FC = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session_id: sessionId,
-          command: cmd,
+          command: command,
           working_dir: currentPath,
         }),
       });
@@ -1047,6 +1036,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Handle Key Down =====
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowUp") {
       e.preventDefault();
@@ -1083,6 +1073,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Load Processes =====
   const loadProcesses = async () => {
     if (!connected) return;
 
@@ -1097,6 +1088,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Perform Kill Process =====
   const performKillProcess = async (pid: number) => {
     try {
       const res = await fetch(`${API_URL}/api/ssh/kill-process`, {
@@ -1135,6 +1127,7 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
+  // ===== Kill Processes =====
   const killProcess = (pid: number) => {
     openConfirm(
       { type: "kill", pid },
@@ -1143,6 +1136,7 @@ const EnhancedSSHManager: React.FC = () => {
     );
   };
 
+  // ===== Confirm Dialog Handler =====
   const onConfirmAction = async () => {
     const action = confirmAction;
     closeConfirm();
@@ -1167,125 +1161,23 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
-  // ===== Pinned Folder =====
-  const addPinnedFolder = (folder: { name: string; path: string }) => {
-    setPinnedFolders((prev) => {
-      if (prev.some((p) => p.path === folder.path)) return prev;
-      return [...prev, { name: folder.name, path: folder.path }];
-    });
-  };
-
-  // ===== Run Script Modal =====
-  const openRunScriptModal = (path: string) => {
-    if (!connected || !sessionId) {
-      showAlert(
-        "Not connected",
-        "Connect first, then run scripts.",
-        "destructive"
-      );
-      return;
-    }
-
-    setRunScriptPath(path);
-
-    const out = `${parentDir(path)}/output`.replace(/\/{2,}/g, "/");
-    setRunOut(out);
-
-    // default servers can stay last-used (don’t override)
-    // default api key can stay root
-    setRunModalOpen(true);
-  };
-
-  const runScript = async () => {
-    if (!runScriptPath) {
-      showAlert("Missing script", "Script path not set.", "destructive");
-      return;
-    }
-    if (!runInput.trim()) {
-      showAlert("Missing input", "Please set input file path.", "destructive");
-      return;
-    }
-    if (!runOut.trim()) {
-      showAlert(
-        "Missing output",
-        "Please set output folder path.",
-        "destructive"
-      );
-      return;
-    }
-    if (!runServers.trim()) {
-      showAlert("Missing servers", "Please set servers list.", "destructive");
-      return;
-    }
-
-    const safeOut = runOut.replace(/\/{2,}/g, "/");
-    const logFile = `${safeOut}/run_${Date.now()}.log`.replace(/\/{2,}/g, "/");
-
-    const cmd = `
-bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
-  --input "${runInput}" \
-  --out "${safeOut}" \
-  --api-key "${runApiKey}" \
-  --concurrency ${Number(runConcurrency) || 1} \
-  --timeout ${Number(runTimeout) || 60} \
-  --servers "${runServers}" \
-  ${runResume ? "--resume" : ""} \
-  > "${logFile}" 2>&1 & echo "PID:$!" && echo "LOG:${logFile}"'
-`.trim();
-
-    setTerminalOutput((prev) => [
-      ...prev,
-      "",
-      `[${new Date().toLocaleTimeString()}] RUN SCRIPT`,
-      `$ ${cmd}`,
-    ]);
-    setActiveTab("terminal");
-
-    try {
-      const res = await fetch(`${API_URL}/api/ssh/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          command: cmd,
-          working_dir: parentDir(runScriptPath),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data?.output) setTerminalOutput((prev) => [...prev, data.output]);
-      if (data?.error)
-        setTerminalOutput((prev) => [...prev, `ERROR: ${data.error}`]);
-
-      setTerminalOutput((prev) => [
-        ...prev,
-        "",
-        `[tip] To watch logs:`,
-        `$ tail -f "${logFile}"`,
-      ]);
-
-      showAlert(
-        "Started",
-        "Script started in background. Check logs in Terminal.",
-        "default",
-        3500
-      );
-      setRunModalOpen(false);
-    } catch (err: any) {
-      setTerminalOutput((prev) => [
-        ...prev,
-        `ERROR: ${err?.message || "Unknown error"}`,
-      ]);
-      showAlert(
-        "Run failed",
-        err?.message || "Unknown error",
-        "destructive",
-        6000
-      );
+  // ===== Navigate Button =====
+  const navigateUp = () => {
+    const parts = currentPath.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      parts.pop();
+      loadFiles("/" + parts.join("/") || "/");
     }
   };
 
+  // ===== Parent Dir =====
+  const parentDir = (p: string) => {
+    const parts = (p || "").split("/").filter(Boolean);
+    parts.pop();
+    return "/" + parts.join("/");
+  };
+
+  // ===== Format Up Time =====
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -1310,6 +1202,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
     );
   }
 
+  // ========================= UI =========================
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Bottom Right Alert Banner */}
@@ -1319,12 +1212,14 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
             variant={uiAlert.variant}
             className="relative flex items-start gap-3 pr-10"
           >
+            {/* Icon */}
             {uiAlert.variant === "destructive" ? (
               <AlertTriangle className="h-5 w-5 mt-0.5" />
             ) : (
               <CheckCircle2 className="h-5 w-5 mt-0.5" />
             )}
 
+            {/* Content */}
             <div className="min-w-0">
               <AlertTitle className="leading-tight">{uiAlert.title}</AlertTitle>
               {uiAlert.description ? (
@@ -1334,6 +1229,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               ) : null}
             </div>
 
+            {/* Close */}
             <button
               onClick={() => setUiAlert((p) => ({ ...p, open: false }))}
               className="absolute right-3 top-3 opacity-70 hover:opacity-100"
@@ -1433,128 +1329,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ✅ Run Script Modal */}
-      <AlertDialog open={runModalOpen} onOpenChange={setRunModalOpen}>
-        <AlertDialogContent className="max-w-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Run Script</AlertDialogTitle>
-            <AlertDialogDescription>
-              Script: <span className="font-mono">{runScriptPath || "-"}</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-bold mb-1">
-                Input File Path (--input)
-              </label>
-              <Input
-                value={runInput}
-                onChange={(e) => setRunInput(e.target.value)}
-                placeholder="/root/input.csv"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold mb-1">
-                Output Folder (--out)
-              </label>
-              <Input
-                value={runOut}
-                onChange={(e) => setRunOut(e.target.value)}
-                placeholder="/root/output"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Logs will be written into this folder.
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-sm font-bold mb-1">API Key</label>
-                <Input
-                  value={runApiKey}
-                  onChange={(e) => setRunApiKey(e.target.value)}
-                  placeholder="root"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold mb-1">
-                  Concurrency
-                </label>
-                <Input
-                  type="number"
-                  value={runConcurrency}
-                  onChange={(e) =>
-                    setRunConcurrency(parseInt(e.target.value || "1", 10))
-                  }
-                  placeholder="500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-bold mb-1">
-                  Timeout (sec)
-                </label>
-                <Input
-                  type="number"
-                  value={runTimeout}
-                  onChange={(e) =>
-                    setRunTimeout(parseInt(e.target.value || "60", 10))
-                  }
-                  placeholder="60"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold mb-1">
-                Servers (--servers)
-              </label>
-              <textarea
-                value={runServers}
-                onChange={(e) => setRunServers(e.target.value)}
-                className="w-full h-28 p-3 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500"
-                placeholder="109.199.122.106:9000,109.199.122.106:8888,109.199.122.181:9000"
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Tip: Use comma-separated list (same as your CLI).
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={runResume}
-                onChange={(e) => setRunResume(e.target.checked)}
-              />
-              Use --resume
-            </label>
-
-            <div className="text-xs text-gray-500">
-              After start, go to <b>Terminal</b> and run:{" "}
-              <span className="font-mono">tail -f output/run_*.log</span>
-            </div>
-          </div>
-
-          <AlertDialogFooter className="mt-4">
-            <AlertDialogCancel
-              onClick={() => {
-                setRunModalOpen(false);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                runScript();
-              }}
-            >
-              Run
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       {!connected ? (
         <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-2xl">
@@ -1571,6 +1345,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               Connect to your remote Linux server
             </p>
 
+            {/* Saved Connections */}
             {savedConnections.length > 0 && (
               <div className="mb-6">
                 <h3 className="text-sm font-bold mb-3 text-gray-700">
@@ -1807,8 +1582,10 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   }`}
                   onDragEnter={(e) => {
                     e.preventDefault();
+
                     const fromIndex = dragPinnedIndexRef.current;
                     const toIndex = idx;
+
                     if (fromIndex === null || fromIndex === undefined) return;
                     if (fromIndex === toIndex) return;
 
@@ -1819,6 +1596,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                       return next;
                     });
 
+                    // ✅ update current dragged index so it keeps moving smoothly
                     dragPinnedIndexRef.current = toIndex;
                   }}
                   onDragOver={(e) => {
@@ -1827,13 +1605,15 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   }}
                   title={p.path}
                 >
+                  {/* Drag handle only */}
                   <span
                     className="px-2 py-2 cursor-grab active:cursor-grabbing select-none"
                     draggable
                     onDragStart={(e) => {
                       dragPinnedIndexRef.current = idx;
+
                       e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", "pinned");
+                      e.dataTransfer.setData("text/plain", "pinned"); // browser compat
                       e.dataTransfer.setData(
                         "application/x-ssh-pinned",
                         JSON.stringify({ fromIndex: idx, path: p.path })
@@ -1847,6 +1627,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     ⠿
                   </span>
 
+                  {/* Clickable tab */}
                   <button
                     type="button"
                     onClick={() => {
@@ -1872,14 +1653,18 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                 }}
                 onDrop={(e) => {
                   e.preventDefault();
+
                   const raw = e.dataTransfer.getData(
                     "application/x-ssh-pinned"
                   );
                   if (!raw) return;
+
                   try {
                     const data = JSON.parse(raw);
                     const fromIndex = data?.fromIndex;
+
                     if (fromIndex === null || fromIndex === undefined) return;
+
                     setPinnedFolders((prev) =>
                       prev.filter((_, i) => i !== fromIndex)
                     );
@@ -1999,7 +1784,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                               <button
                                 onClick={() => openEditor(item.path)}
                                 className="p-1 hover:bg-gray-200 rounded"
-                                title="Edit"
                               >
                                 <Edit size={14} />
                               </button>
@@ -2007,7 +1791,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                                 onClick={() =>
                                   handleDownload(item.path, item.name)
                                 }
-                                title="Download"
                                 className="p-1 hover:bg-gray-200 rounded"
                               >
                                 <Download size={14} />
@@ -2023,19 +1806,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                               <ChevronRight size={14} />
                             </button>
                           )}
-
-                          {item.type === "file" && item.name.endsWith(".py") ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRunScriptModal(item.path);
-                              }}
-                              className="p-1 rounded"
-                              title="Run"
-                            >
-                              <Play size={14} />
-                            </button>
-                          ) : null}
 
                           <button
                             onClick={() => openRenameDialog(item)}
@@ -2056,7 +1826,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                           <button
                             onClick={() => handleDelete(item.path)}
                             className="p-1 hover:bg-gray-200 rounded text-red-500"
-                            title="Delete"
                           >
                             <Trash2 size={14} />
                           </button>
