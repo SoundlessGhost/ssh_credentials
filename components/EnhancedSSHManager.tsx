@@ -45,7 +45,7 @@ import {
   Play,
 } from "lucide-react";
 
-const API_URL = "http://109.199.122.181:8080";
+const API_URL = "https://api.dekhai.org";
 
 interface SSHCredentials {
   host: string;
