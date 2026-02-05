@@ -45,7 +45,7 @@ import {
   Play,
 } from "lucide-react";
 
-const API_URL = "http://localhost:8080";
+const API_URL = "http://109.199.122.181:8080";
 
 interface SSHCredentials {
   host: string;
@@ -341,12 +341,11 @@ const EnhancedSSHManager: React.FC = () => {
               .readText()
               .then((text) => {
                 if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-                 suppressInputRef.current = true;
-                 wsRef.current.send(text);
-                 setTimeout(() => {
-                   suppressInputRef.current = false;
-                 }, 150);
-
+                  suppressInputRef.current = true;
+                  wsRef.current.send(text);
+                  setTimeout(() => {
+                    suppressInputRef.current = false;
+                  }, 150);
                 }
               })
               .catch(() => {})
