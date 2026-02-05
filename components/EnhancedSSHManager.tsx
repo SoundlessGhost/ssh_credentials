@@ -205,7 +205,7 @@ const EnhancedSSHManager: React.FC = () => {
   const fitAddonRef = useRef<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const suppressInputRef = useRef(false);
-  // const pasteLockRef = useRef(false);
+  const pasteLockRef = useRef(false);
 
   // ===== UI Alert =====
   const [uiAlert, setUiAlert] = useState<{
@@ -305,6 +305,7 @@ const EnhancedSSHManager: React.FC = () => {
           try {
             const text = await navigator.clipboard.readText();
             if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(text);
               suppressInputRef.current = true;
               wsRef.current.send(text);
               setTimeout(() => {
@@ -332,30 +333,31 @@ const EnhancedSSHManager: React.FC = () => {
           if (ev.repeat) return true;
 
           // ✅ Paste: Ctrl+V
-          // if (ev.ctrlKey && !ev.shiftKey && key === "v") {
-          //   if (pasteLockRef.current) return false; // already handled
-          //   pasteLockRef.current = true;
+          if (ev.ctrlKey && !ev.shiftKey && key === "v") {
+            if (pasteLockRef.current) return false; // already handled
+            pasteLockRef.current = true;
 
-          //   navigator.clipboard
-          //     .readText()
-          //     .then((text) => {
-          //       if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-          //         suppressInputRef.current = true;
-          //         wsRef.current.send(text);
-          //         setTimeout(() => {
-          //           suppressInputRef.current = false;
-          //         }, 150);
-          //       }
-          //     })
-          //     .catch(() => {})
-          //     .finally(() => {
-          //       setTimeout(() => {
-          //         pasteLockRef.current = false;
-          //       }, 300);
-          //     });
+            navigator.clipboard
+              .readText()
+              .then((text) => {
+                if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+                 suppressInputRef.current = true;
+                 wsRef.current.send(text);
+                 setTimeout(() => {
+                   suppressInputRef.current = false;
+                 }, 150);
 
-          //   return false;
-          // }
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                setTimeout(() => {
+                  pasteLockRef.current = false;
+                }, 300);
+              });
+
+            return false;
+          }
 
           // ✅ Copy: Ctrl+C only when selection exists
           if (ev.ctrlKey && key === "c" && hasSelection) {
@@ -471,6 +473,90 @@ const EnhancedSSHManager: React.FC = () => {
       }
     }
   }, []);
+
+  // ===== Restore last active session =====
+  // useEffect(() => {
+  //   const saved = localStorage.getItem("ssh_active_session");
+  //   if (!saved) return;
+
+  //   (async () => {
+  //     try {
+  //       const parsed = JSON.parse(saved);
+  //       const restoredCredentials = parsed?.credentials;
+  //       const restoredSessionId = parsed?.sessionId;
+  //       const restoredPath = parsed?.currentPath || "/root";
+  //       const restoredTab = parsed?.activeTab || "files";
+
+  //       if (!restoredCredentials) {
+  //         localStorage.removeItem("ssh_active_session");
+  //         return;
+  //       }
+
+  //       // 1) Try to verify session exists on backend
+  //       if (restoredSessionId) {
+  //         const check = await fetch(
+  //           `${API_URL}/api/ssh/list?session_id=${restoredSessionId}&path=${encodeURIComponent(restoredPath)}`,
+  //         )
+  //           .then((r) => r.json())
+  //           .catch(() => null);
+
+  //         if (check?.success) {
+  //           // session still alive ✅
+  //           setCredentials(restoredCredentials);
+  //           setSessionId(restoredSessionId);
+  //           setConnected(true);
+  //           setFiles(check.items || []);
+  //           setCurrentPath(check.path || restoredPath);
+  //           setActiveTab(restoredTab);
+  //           return;
+  //         }
+  //       }
+
+  //       // 2) If session missing -> auto reconnect (NEW session)
+  //       const newSessionId = `session_${Date.now()}`;
+  //       const res = await fetch(`${API_URL}/api/ssh/connect`, {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({
+  //           ...restoredCredentials,
+  //           session_id: newSessionId,
+  //         }),
+  //       });
+
+  //       const data = await res.json();
+  //       if (!data?.success) {
+  //         localStorage.removeItem("ssh_active_session");
+  //         return;
+  //       }
+
+  //       // load files after reconnect
+  //       const list = await fetch(
+  //         `${API_URL}/api/ssh/list?session_id=${newSessionId}&path=${encodeURIComponent(restoredPath)}`,
+  //       ).then((r) => r.json());
+
+  //       setCredentials(restoredCredentials);
+  //       setSessionId(newSessionId);
+  //       setConnected(true);
+  //       setFiles(list.items || []);
+  //       setCurrentPath(list.path || restoredPath);
+  //       setActiveTab(restoredTab);
+
+  //       // update storage with NEW session id
+  //       localStorage.setItem(
+  //         "ssh_active_session",
+  //         JSON.stringify({
+  //           sessionId: newSessionId,
+  //           credentials: restoredCredentials,
+  //           currentPath: restoredPath,
+  //           activeTab: restoredTab,
+  //           savedAt: new Date().toISOString(),
+  //         }),
+  //       );
+  //     } catch {
+  //       localStorage.removeItem("ssh_active_session");
+  //     }
+  //   })();
+  // }, []);
 
   // ===== Persist active session =====
   useEffect(() => {
