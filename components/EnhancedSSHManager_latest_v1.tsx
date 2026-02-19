@@ -51,8 +51,7 @@ import {
   Shield,
 } from "lucide-react";
 
-// const API_URL = "https://api.dekhai.org";
-const API_URL = "http://localhost:2247";
+const API_URL = "https://api.dekhai.org";
 
 // ===== All Interface =====
 interface SSHCredentials {
@@ -182,17 +181,6 @@ const EnhancedSSHManager: React.FC = () => {
   const [currentPath, setCurrentPath] = useState("/root");
   const [activeTab, setActiveTab] = useState<TabType>("files");
 
-  // ===== Transfer Progress =====
-  const [transferProgress, setTransferProgress] = useState<{
-    active: boolean;
-    type: "upload" | "download";
-    filename: string;
-    loaded: number;
-    total: number;
-    percent: number;
-    speed: string;
-  } | null>(null);
-
   // ===== Editor =====
   const [editorContent, setEditorContent] = useState("");
   const [editorFile, setEditorFile] = useState<string>("");
@@ -272,14 +260,6 @@ const EnhancedSSHManager: React.FC = () => {
     if (autoHideMs > 0) {
       setTimeout(() => setUiAlert((p) => ({ ...p, open: false })), autoHideMs);
     }
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   const xtermPrint = (text: string) => {
@@ -948,169 +928,66 @@ const EnhancedSSHManager: React.FC = () => {
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      const formData = new FormData();
-      formData.append("file", file);
-      const startTime = Date.now();
+    const formData = new FormData();
+    formData.append("file", file);
 
-      try {
-        setLoading(true);
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open(
-            "POST",
-            `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-          );
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+        { method: "POST", body: formData },
+      );
 
-          xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-              const elapsed = (Date.now() - startTime) / 1000;
-              const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
-              const speedStr =
-                speedBps > 1024 * 1024
-                  ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-                  : `${(speedBps / 1024).toFixed(0)} KB/s`;
-              setTransferProgress({
-                active: true,
-                type: "upload",
-                filename: file.name,
-                loaded: evt.loaded,
-                total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 100),
-                speed: speedStr,
-              });
-            }
-          };
-
-          xhr.onload = () => {
-            setTransferProgress(null);
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const data = JSON.parse(xhr.responseText);
-                if (data.success) {
-                  loadFiles();
-                  showAlert(
-                    "Uploaded",
-                    `${file.name} (${formatBytes(file.size)})`,
-                  );
-                  xtermPrint(
-                    `[UPLOAD] ${file.name} (${formatBytes(file.size)})`,
-                  );
-                } else {
-                  showAlert(
-                    "Upload failed",
-                    data?.detail || "Unknown error",
-                    "destructive",
-                    5000,
-                  );
-                }
-              } catch {
-                showAlert(
-                  "Upload failed",
-                  "Invalid response",
-                  "destructive",
-                  5000,
-                );
-              }
-              resolve();
-            } else {
-              reject(new Error(`HTTP ${xhr.status}`));
-            }
-          };
-
-          xhr.onerror = () => {
-            setTransferProgress(null);
-            reject(new Error("Network error"));
-          };
-          xhr.send(formData);
-        });
-      } catch (err: any) {
-        setTransferProgress(null);
+      const data = await res.json();
+      if (data.success) {
+        loadFiles();
+        showAlert("Uploaded", file.name);
+        xtermPrint(`[UPLOAD] ${file.name}`);
+      } else {
         showAlert(
           "Upload failed",
-          err?.message || "Unknown error",
+          data?.detail || "Unknown error",
           "destructive",
-          6000,
+          5000,
         );
-      } finally {
-        setLoading(false);
       }
+    } catch (err: any) {
+      showAlert(
+        "Upload failed",
+        err?.message || "Unknown error",
+        "destructive",
+        6000,
+      );
+    } finally {
+      setLoading(false);
+      e.target.value = "";
     }
-    e.target.value = "";
   };
 
   const handleDownload = async (path: string, filename: string) => {
-    const startTime = Date.now();
     try {
       const res = await fetch(
         `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`,
       );
+
       if (!res.ok) {
         showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
         return;
       }
 
-      const contentLength = parseInt(
-        res.headers.get("Content-Length") ||
-          res.headers.get("X-File-Size") ||
-          "0",
-        10,
-      );
-      const reader = res.body?.getReader();
-
-      if (!reader) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-        showAlert("Downloaded", filename);
-        return;
-      }
-
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (contentLength > 0) {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const speedBps = elapsed > 0 ? received / elapsed : 0;
-          const speedStr =
-            speedBps > 1024 * 1024
-              ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-              : `${(speedBps / 1024).toFixed(0)} KB/s`;
-          setTransferProgress({
-            active: true,
-            type: "download",
-            filename,
-            loaded: received,
-            total: contentLength,
-            percent: Math.round((received / contentLength) * 100),
-            speed: speedStr,
-          });
-        }
-      }
-      setTransferProgress(null);
-      const blob = new Blob(chunks as BlobPart[]);
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       a.click();
-      window.URL.revokeObjectURL(url);
-      showAlert("Downloaded", `${filename} (${formatBytes(received)})`);
-      xtermPrint(`[DOWNLOAD] ${filename} (${formatBytes(received)})`);
+
+      showAlert("Downloaded", filename);
+      xtermPrint(`[DOWNLOAD] ${filename}`);
     } catch (err: any) {
-      setTransferProgress(null);
       showAlert(
         "Download failed",
         err?.message || "Unknown error",
@@ -2374,61 +2251,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               ))}
             </div>
 
-            {/* ===== Transfer Progress Bar ===== */}
-            {transferProgress && (
-              <div
-                className={`mt-6 p-4 rounded-xl border ${darkMode ? "bg-slate-800/80 border-slate-700" : "bg-white border-slate-200"}`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {transferProgress.type === "upload" ? (
-                      <Upload size={16} className="text-violet-500 shrink-0" />
-                    ) : (
-                      <Download size={16} className="text-cyan-500 shrink-0" />
-                    )}
-                    <span
-                      className={`text-sm font-medium truncate ${darkMode ? "text-slate-200" : "text-slate-700"}`}
-                    >
-                      {transferProgress.type === "upload"
-                        ? "Uploading"
-                        : "Downloading"}
-                      : {transferProgress.filename}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs shrink-0 ml-3">
-                    <span
-                      className={darkMode ? "text-slate-400" : "text-slate-500"}
-                    >
-                      {formatBytes(transferProgress.loaded)} /{" "}
-                      {formatBytes(transferProgress.total)}
-                    </span>
-                    <span
-                      className={`font-mono font-bold ${darkMode ? "text-cyan-400" : "text-cyan-600"}`}
-                    >
-                      {transferProgress.speed}
-                    </span>
-                    <span
-                      className={`font-bold text-base ${darkMode ? "text-slate-200" : "text-slate-700"}`}
-                    >
-                      {transferProgress.percent}%
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className={`w-full rounded-full h-2.5 ${darkMode ? "bg-slate-700" : "bg-slate-200"}`}
-                >
-                  <div
-                    className={`h-2.5 rounded-full transition-all duration-300 ${
-                      transferProgress.type === "upload"
-                        ? "bg-linear-to-r from-violet-500 to-purple-500"
-                        : "bg-linear-to-r from-cyan-500 to-blue-500"
-                    }`}
-                    style={{ width: `${transferProgress.percent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Remove pinned drop zone */}
             {Array.isArray(pinnedFolders) && pinnedFolders.length > 0 && (
               <div
@@ -2496,7 +2318,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                       Upload
                       <input
                         type="file"
-                        multiple
                         onChange={handleUpload}
                         className="hidden"
                       />

@@ -2,8 +2,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { Input } from "@/components/ui/input";
 import React, { useState, useEffect, useRef } from "react";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import {
@@ -43,18 +43,10 @@ import {
   CheckCircle2,
   ClipboardPaste,
   Play,
-  Moon,
-  Sun,
-  Pencil,
-  Clock,
-  Zap,
-  Shield,
 } from "lucide-react";
 
-// const API_URL = "https://api.dekhai.org";
-const API_URL = "http://localhost:2247";
+const API_URL = "https://api.dekhai.org";
 
-// ===== All Interface =====
 interface SSHCredentials {
   host: string;
   port: number;
@@ -108,7 +100,6 @@ interface ProcessInfo {
   command: string;
 }
 
-// ===== All Type =====
 type TabType =
   | "files"
   | "terminal"
@@ -133,9 +124,6 @@ type ConfirmAction =
 type PinnedFolder = { name: string; path: string };
 
 const EnhancedSSHManager: React.FC = () => {
-  // ===== Dark Mode =====
-  const [darkMode, setDarkMode] = useState(false);
-
   // ===== Folder Dialog Open =====
   const [folderName, setFolderName] = useState("");
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
@@ -144,14 +132,6 @@ const EnhancedSSHManager: React.FC = () => {
   const [renameValue, setRenameValue] = useState("");
   const [renameTargetPath, setRenameTargetPath] = useState("");
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-
-  // ===== Rename Connection Dialog =====
-  const [renameConnectionValue, setRenameConnectionValue] = useState("");
-  const [renameConnectionId, setRenameConnectionId] = useState<string | null>(
-    null,
-  );
-  const [renameConnectionDialogOpen, setRenameConnectionDialogOpen] =
-    useState(false);
 
   // ===== Confirm Dialog =====
   const [confirmDesc, setConfirmDesc] = useState("");
@@ -163,35 +143,24 @@ const EnhancedSSHManager: React.FC = () => {
   const [sessionId, setSessionId] = useState("");
   const [connected, setConnected] = useState(false);
   const [credentials, setCredentials] = useState<SSHCredentials>({
-    host: "",
+    host: "144.91.85.229",
     port: 22,
     username: "root",
-    password: "",
+    password: "YOUR_PASSWORD",
   });
 
   // ===== Saved connections =====
-  const [connectionName, setConnectionName] = useState("");
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>(
     [],
   );
+  const [connectionName, setConnectionName] = useState("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
 
   // ===== File manager =====
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentPath, setCurrentPath] = useState("/root");
   const [activeTab, setActiveTab] = useState<TabType>("files");
-
-  // ===== Transfer Progress =====
-  const [transferProgress, setTransferProgress] = useState<{
-    active: boolean;
-    type: "upload" | "download";
-    filename: string;
-    loaded: number;
-    total: number;
-    percent: number;
-    speed: string;
-  } | null>(null);
 
   // ===== Editor =====
   const [editorContent, setEditorContent] = useState("");
@@ -207,34 +176,36 @@ const EnhancedSSHManager: React.FC = () => {
   const [clipboard, setClipboard] = useState<ClipboardState>(null);
 
   // ===== Booting Spinner =====
-  const restoreOnceRef = useRef(false);
   const [appBooting, setAppBooting] = useState(true);
+  const restoreOnceRef = useRef(false);
 
   // ===== Pinned folders =====
-  const dragPinnedIndexRef = useRef<number | null>(null);
   const [pinnedFolders, setPinnedFolders] = useState<PinnedFolder[]>([]);
+  const dragPinnedIndexRef = useRef<number | null>(null);
+
   const pinnedKey = connected
     ? `ssh_pinned_folders_${credentials.username}@${credentials.host}`
     : null;
 
   // ===== Script Run Modal =====
-  const [runOut, setRunOut] = useState("");
+  const [runModalOpen, setRunModalOpen] = useState(false);
+  const [runScriptPath, setRunScriptPath] = useState("");
+
   const [runInput, setRunInput] = useState("");
+  const [runOut, setRunOut] = useState("");
+  const [runApiKey, setRunApiKey] = useState("root");
+  const [runConcurrency, setRunConcurrency] = useState(500);
   const [runTimeout, setRunTimeout] = useState(60);
   const [runServers, setRunServers] = useState("");
   const [runResume, setRunResume] = useState(true);
-  const [runApiKey, setRunApiKey] = useState("root");
-  const [runScriptPath, setRunScriptPath] = useState("");
-  const [runModalOpen, setRunModalOpen] = useState(false);
-  const [runConcurrency, setRunConcurrency] = useState(500);
 
   // ===== xterm refs =====
-  const pasteLockRef = useRef(false);
+  const xtermContainerRef = useRef<HTMLDivElement | null>(null);
   const xtermRef = useRef<any>(null);
   const fitAddonRef = useRef<any>(null);
-  const suppressInputRef = useRef(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const xtermContainerRef = useRef<HTMLDivElement | null>(null);
+  const suppressInputRef = useRef(false);
+  const pasteLockRef = useRef(false);
 
   // ===== UI Alert =====
   const [uiAlert, setUiAlert] = useState<{
@@ -249,19 +220,6 @@ const EnhancedSSHManager: React.FC = () => {
     variant: "default",
   });
 
-  // ===== Load dark mode preference =====
-  useEffect(() => {
-    const savedDarkMode = localStorage.getItem("ssh_dark_mode");
-    if (savedDarkMode === "true") {
-      setDarkMode(true);
-    }
-  }, []);
-
-  // ===== Persist dark mode =====
-  useEffect(() => {
-    localStorage.setItem("ssh_dark_mode", darkMode.toString());
-  }, [darkMode]);
-
   const showAlert = (
     title: string,
     description = "",
@@ -272,14 +230,6 @@ const EnhancedSSHManager: React.FC = () => {
     if (autoHideMs > 0) {
       setTimeout(() => setUiAlert((p) => ({ ...p, open: false })), autoHideMs);
     }
-  };
-
-  const formatBytes = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024)
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   };
 
   const xtermPrint = (text: string) => {
@@ -321,13 +271,6 @@ const EnhancedSSHManager: React.FC = () => {
           convertEol: true,
           fontSize: 14,
           scrollback: 5000,
-          theme: darkMode
-            ? {
-                background: "#1a1b26",
-                foreground: "#a9b1d6",
-                cursor: "#c0caf5",
-              }
-            : undefined,
         });
 
         const fitAddon = new FitAddon();
@@ -362,8 +305,9 @@ const EnhancedSSHManager: React.FC = () => {
           try {
             const text = await navigator.clipboard.readText();
             if (text && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(text);
               suppressInputRef.current = true;
-              wsRef.current.send(text.replace(/\r?\n$/, ""));
+              wsRef.current.send(text);
               setTimeout(() => {
                 suppressInputRef.current = false;
               }, 150);
@@ -392,13 +336,13 @@ const EnhancedSSHManager: React.FC = () => {
           if (ev.ctrlKey && !ev.shiftKey && key === "v") {
             if (pasteLockRef.current) return false; // already handled
             pasteLockRef.current = true;
-            suppressInputRef.current = true; // ← IMMEDIATELY block onData to prevent duplicates
 
             navigator.clipboard
               .readText()
               .then((text) => {
                 if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(text.replace(/\r?\n$/, ""));
+                  suppressInputRef.current = true;
+                  wsRef.current.send(text);
                   setTimeout(() => {
                     suppressInputRef.current = false;
                   }, 150);
@@ -515,7 +459,7 @@ const EnhancedSSHManager: React.FC = () => {
       } catch {}
       wsRef.current = null;
     };
-  }, [activeTab, sessionId, darkMode]);
+  }, [activeTab, sessionId]);
 
   // ===== Load saved connections =====
   useEffect(() => {
@@ -528,6 +472,90 @@ const EnhancedSSHManager: React.FC = () => {
       }
     }
   }, []);
+
+  // ===== Restore last active session =====
+  // useEffect(() => {
+  //   const saved = localStorage.getItem("ssh_active_session");
+  //   if (!saved) return;
+
+  //   (async () => {
+  //     try {
+  //       const parsed = JSON.parse(saved);
+  //       const restoredCredentials = parsed?.credentials;
+  //       const restoredSessionId = parsed?.sessionId;
+  //       const restoredPath = parsed?.currentPath || "/root";
+  //       const restoredTab = parsed?.activeTab || "files";
+
+  //       if (!restoredCredentials) {
+  //         localStorage.removeItem("ssh_active_session");
+  //         return;
+  //       }
+
+  //       // 1) Try to verify session exists on backend
+  //       if (restoredSessionId) {
+  //         const check = await fetch(
+  //           `${API_URL}/api/ssh/list?session_id=${restoredSessionId}&path=${encodeURIComponent(restoredPath)}`,
+  //         )
+  //           .then((r) => r.json())
+  //           .catch(() => null);
+
+  //         if (check?.success) {
+  //           // session still alive ✅
+  //           setCredentials(restoredCredentials);
+  //           setSessionId(restoredSessionId);
+  //           setConnected(true);
+  //           setFiles(check.items || []);
+  //           setCurrentPath(check.path || restoredPath);
+  //           setActiveTab(restoredTab);
+  //           return;
+  //         }
+  //       }
+
+  //       // 2) If session missing -> auto reconnect (NEW session)
+  //       const newSessionId = `session_${Date.now()}`;
+  //       const res = await fetch(`${API_URL}/api/ssh/connect`, {
+  //         method: "POST",
+  //         headers: { "Content-Type": "application/json" },
+  //         body: JSON.stringify({
+  //           ...restoredCredentials,
+  //           session_id: newSessionId,
+  //         }),
+  //       });
+
+  //       const data = await res.json();
+  //       if (!data?.success) {
+  //         localStorage.removeItem("ssh_active_session");
+  //         return;
+  //       }
+
+  //       // load files after reconnect
+  //       const list = await fetch(
+  //         `${API_URL}/api/ssh/list?session_id=${newSessionId}&path=${encodeURIComponent(restoredPath)}`,
+  //       ).then((r) => r.json());
+
+  //       setCredentials(restoredCredentials);
+  //       setSessionId(newSessionId);
+  //       setConnected(true);
+  //       setFiles(list.items || []);
+  //       setCurrentPath(list.path || restoredPath);
+  //       setActiveTab(restoredTab);
+
+  //       // update storage with NEW session id
+  //       localStorage.setItem(
+  //         "ssh_active_session",
+  //         JSON.stringify({
+  //           sessionId: newSessionId,
+  //           credentials: restoredCredentials,
+  //           currentPath: restoredPath,
+  //           activeTab: restoredTab,
+  //           savedAt: new Date().toISOString(),
+  //         }),
+  //       );
+  //     } catch {
+  //       localStorage.removeItem("ssh_active_session");
+  //     }
+  //   })();
+  // }, []);
 
   // ===== Persist active session =====
   useEffect(() => {
@@ -656,7 +684,6 @@ const EnhancedSSHManager: React.FC = () => {
     setConfirmOpen(true);
   };
 
-  // ===== Close Confirm =====
   const closeConfirm = () => {
     setConfirmOpen(false);
     setConfirmAction(null);
@@ -688,7 +715,7 @@ const EnhancedSSHManager: React.FC = () => {
       port: credentials.port,
       username: credentials.username,
       password: credentials.password,
-      color: `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`,
+      color: "#" + Math.floor(Math.random() * 16777215).toString(16),
       lastUsed: new Date().toISOString(),
     };
 
@@ -698,32 +725,6 @@ const EnhancedSSHManager: React.FC = () => {
     setShowSaveDialog(false);
     setConnectionName("");
     showAlert("Saved", "Connection saved successfully.");
-  };
-
-  // ===== Rename Connection =====
-  const openRenameConnectionDialog = (conn: SavedConnection) => {
-    setRenameConnectionId(conn.id);
-    setRenameConnectionValue(conn.name);
-    setRenameConnectionDialogOpen(true);
-  };
-
-  const performRenameConnection = () => {
-    if (!renameConnectionId || !renameConnectionValue.trim()) {
-      showAlert("Invalid name", "Please enter a valid name.", "destructive");
-      return;
-    }
-
-    const updated = savedConnections.map((c) =>
-      c.id === renameConnectionId
-        ? { ...c, name: renameConnectionValue.trim() }
-        : c,
-    );
-    setSavedConnections(updated);
-    localStorage.setItem("ssh_connections", JSON.stringify(updated));
-    setRenameConnectionDialogOpen(false);
-    setRenameConnectionId(null);
-    setRenameConnectionValue("");
-    showAlert("Renamed", "Connection renamed successfully.");
   };
 
   // ===== Load connection =====
@@ -948,169 +949,66 @@ const EnhancedSSHManager: React.FC = () => {
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
-      const formData = new FormData();
-      formData.append("file", file);
-      const startTime = Date.now();
+    const formData = new FormData();
+    formData.append("file", file);
 
-      try {
-        setLoading(true);
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open(
-            "POST",
-            `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-          );
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+        { method: "POST", body: formData },
+      );
 
-          xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-              const elapsed = (Date.now() - startTime) / 1000;
-              const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
-              const speedStr =
-                speedBps > 1024 * 1024
-                  ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-                  : `${(speedBps / 1024).toFixed(0)} KB/s`;
-              setTransferProgress({
-                active: true,
-                type: "upload",
-                filename: file.name,
-                loaded: evt.loaded,
-                total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 100),
-                speed: speedStr,
-              });
-            }
-          };
-
-          xhr.onload = () => {
-            setTransferProgress(null);
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const data = JSON.parse(xhr.responseText);
-                if (data.success) {
-                  loadFiles();
-                  showAlert(
-                    "Uploaded",
-                    `${file.name} (${formatBytes(file.size)})`,
-                  );
-                  xtermPrint(
-                    `[UPLOAD] ${file.name} (${formatBytes(file.size)})`,
-                  );
-                } else {
-                  showAlert(
-                    "Upload failed",
-                    data?.detail || "Unknown error",
-                    "destructive",
-                    5000,
-                  );
-                }
-              } catch {
-                showAlert(
-                  "Upload failed",
-                  "Invalid response",
-                  "destructive",
-                  5000,
-                );
-              }
-              resolve();
-            } else {
-              reject(new Error(`HTTP ${xhr.status}`));
-            }
-          };
-
-          xhr.onerror = () => {
-            setTransferProgress(null);
-            reject(new Error("Network error"));
-          };
-          xhr.send(formData);
-        });
-      } catch (err: any) {
-        setTransferProgress(null);
+      const data = await res.json();
+      if (data.success) {
+        loadFiles();
+        showAlert("Uploaded", file.name);
+        xtermPrint(`[UPLOAD] ${file.name}`);
+      } else {
         showAlert(
           "Upload failed",
-          err?.message || "Unknown error",
+          data?.detail || "Unknown error",
           "destructive",
-          6000,
+          5000,
         );
-      } finally {
-        setLoading(false);
       }
+    } catch (err: any) {
+      showAlert(
+        "Upload failed",
+        err?.message || "Unknown error",
+        "destructive",
+        6000,
+      );
+    } finally {
+      setLoading(false);
+      e.target.value = "";
     }
-    e.target.value = "";
   };
 
   const handleDownload = async (path: string, filename: string) => {
-    const startTime = Date.now();
     try {
       const res = await fetch(
         `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`,
       );
+
       if (!res.ok) {
         showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
         return;
       }
 
-      const contentLength = parseInt(
-        res.headers.get("Content-Length") ||
-          res.headers.get("X-File-Size") ||
-          "0",
-        10,
-      );
-      const reader = res.body?.getReader();
-
-      if (!reader) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-        showAlert("Downloaded", filename);
-        return;
-      }
-
-      const chunks: Uint8Array[] = [];
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        received += value.length;
-        if (contentLength > 0) {
-          const elapsed = (Date.now() - startTime) / 1000;
-          const speedBps = elapsed > 0 ? received / elapsed : 0;
-          const speedStr =
-            speedBps > 1024 * 1024
-              ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-              : `${(speedBps / 1024).toFixed(0)} KB/s`;
-          setTransferProgress({
-            active: true,
-            type: "download",
-            filename,
-            loaded: received,
-            total: contentLength,
-            percent: Math.round((received / contentLength) * 100),
-            speed: speedStr,
-          });
-        }
-      }
-      setTransferProgress(null);
-      const blob = new Blob(chunks as BlobPart[]);
+      const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       a.click();
-      window.URL.revokeObjectURL(url);
-      showAlert("Downloaded", `${filename} (${formatBytes(received)})`);
-      xtermPrint(`[DOWNLOAD] ${filename} (${formatBytes(received)})`);
+
+      showAlert("Downloaded", filename);
+      xtermPrint(`[DOWNLOAD] ${filename}`);
     } catch (err: any) {
-      setTransferProgress(null);
       showAlert(
         "Download failed",
         err?.message || "Unknown error",
@@ -1538,66 +1436,16 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
     return `${days}d ${hours}h ${mins}m`;
   };
 
-  const formatLastUsed = (dateStr?: string) => {
-    if (!dateStr) return "Never";
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const mins = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (mins < 1) return "Just now";
-    if (mins < 60) return `${mins}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    return `${days}d ago`;
-  };
-
-  // ===== Theme classes =====
-  const themeClasses = {
-    bg: darkMode
-      ? "bg-slate-900"
-      : "bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100",
-    card: darkMode
-      ? "bg-slate-800/90 border-slate-700"
-      : "bg-white/80 backdrop-blur-xl border-white/20",
-    cardSolid: darkMode
-      ? "bg-slate-800 border-slate-700"
-      : "bg-white border-gray-200",
-    text: darkMode ? "text-slate-100" : "text-slate-800",
-    textMuted: darkMode ? "text-slate-400" : "text-slate-500",
-    textSecondary: darkMode ? "text-slate-300" : "text-slate-600",
-    input: darkMode
-      ? "bg-slate-700/50 border-slate-600 text-white placeholder-slate-400 focus:border-cyan-500 focus:ring-cyan-500/20"
-      : "bg-white/50 border-slate-200 text-slate-800 placeholder-slate-400 focus:border-cyan-500 focus:ring-cyan-500/20",
-    button: darkMode
-      ? "bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25"
-      : "bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25",
-    buttonSecondary: darkMode
-      ? "bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600"
-      : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200",
-    header: darkMode
-      ? "bg-slate-800/95 border-slate-700"
-      : "bg-white/95 backdrop-blur-xl border-white/20",
-  };
-
   // ===== Booting UI =====
   if (appBooting) {
     return (
-      <div
-        className={`min-h-screen flex items-center justify-center ${themeClasses.bg}`}
-      >
-        <div
-          className={`rounded-3xl shadow-2xl px-12 py-10 flex flex-col items-center gap-5 ${themeClasses.card} border`}
-        >
-          <div className="relative">
-            <div className="h-14 w-14 rounded-full border-4 border-cyan-200 border-t-cyan-600 animate-spin" />
-            <div className="absolute inset-0 h-14 w-14 rounded-full border-4 border-transparent border-b-blue-400 animate-spin animation-delay-150" />
-          </div>
-          <div className={`text-xl font-semibold ${themeClasses.text}`}>
+      <div className="min-h-screen flex items-center justify-center ">
+        <div className="rounded-2xl shadow-xl px-10 py-8 flex flex-col items-center gap-4">
+          <div className="h-10 w-10 rounded-full border-4 border-gray-200 border-t-blue-600 animate-spin" />
+          <div className="text-lg font-semibold text-gray-800">
             Reconnecting...
           </div>
-          <div className={`text-sm ${themeClasses.textMuted}`}>
+          <div className="text-sm text-gray-500">
             Restoring your last session
           </div>
         </div>
@@ -1606,32 +1454,24 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
   }
 
   return (
-    <div
-      className={`min-h-screen ${themeClasses.bg} transition-colors duration-300 ${darkMode ? "dark" : ""}`}
-    >
+    <div className="min-h-screen bg-gray-50">
       {/* Bottom Right Alert Banner */}
       {uiAlert.open && (
-        <div className="fixed bottom-4 right-4 z-50 w-96 max-w-[92vw] animate-slide-up">
+        <div className="fixed bottom-4 right-4 z-50 w-105 max-w-[92vw]">
           <Alert
             variant={uiAlert.variant}
-            className={`relative flex items-start gap-3 pr-10 shadow-2xl border ${
-              darkMode
-                ? "bg-slate-800 border-slate-700"
-                : "bg-white border-gray-200"
-            }`}
+            className="relative flex items-start gap-3 pr-10"
           >
             {uiAlert.variant === "destructive" ? (
-              <AlertTriangle className="h-5 w-5 mt-0.5 text-red-500" />
+              <AlertTriangle className="h-5 w-5 mt-0.5" />
             ) : (
-              <CheckCircle2 className="h-5 w-5 mt-0.5 text-emerald-500" />
+              <CheckCircle2 className="h-5 w-5 mt-0.5" />
             )}
 
             <div className="min-w-0">
-              <AlertTitle className={`leading-tight ${themeClasses.text}`}>
-                {uiAlert.title}
-              </AlertTitle>
+              <AlertTitle className="leading-tight">{uiAlert.title}</AlertTitle>
               {uiAlert.description ? (
-                <AlertDescription className={`mt-1 ${themeClasses.textMuted}`}>
+                <AlertDescription className="mt-1">
                   {uiAlert.description}
                 </AlertDescription>
               ) : null}
@@ -1639,7 +1479,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
 
             <button
               onClick={() => setUiAlert((p) => ({ ...p, open: false }))}
-              className={`absolute right-3 top-3 opacity-70 hover:opacity-100 ${themeClasses.textMuted}`}
+              className="absolute right-3 top-3 opacity-70 hover:opacity-100"
               aria-label="Close"
             >
               <X className="h-4 w-4" />
@@ -1650,118 +1490,15 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
 
       {/* Confirm Dialog */}
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent
-          className={darkMode ? "bg-slate-800 border-slate-700" : ""}
-        >
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className={themeClasses.text}>
-              {confirmTitle}
-            </AlertDialogTitle>
-            <AlertDialogDescription className={themeClasses.textMuted}>
-              {confirmDesc}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{confirmTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDesc}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={closeConfirm}
-              className={
-                darkMode
-                  ? "bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600"
-                  : ""
-              }
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={onConfirmAction}
-              className="bg-red-600 hover:bg-red-700 text-white"
-            >
+            <AlertDialogCancel onClick={closeConfirm}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onConfirmAction}>
               Confirm
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Rename File Dialog */}
-      <AlertDialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <AlertDialogContent
-          className={darkMode ? "bg-slate-800 border-slate-700" : ""}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle className={themeClasses.text}>
-              Rename
-            </AlertDialogTitle>
-            <AlertDialogDescription className={themeClasses.textMuted}>
-              Enter a new name for this item.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            placeholder="New name"
-            className={`mt-2 ${themeClasses.input}`}
-            onKeyDown={(e) => e.key === "Enter" && performRename()}
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setRenameDialogOpen(false)}
-              className={
-                darkMode
-                  ? "bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600"
-                  : ""
-              }
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={performRename}
-              className={themeClasses.button}
-            >
-              Rename
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Rename Connection Dialog */}
-      <AlertDialog
-        open={renameConnectionDialogOpen}
-        onOpenChange={setRenameConnectionDialogOpen}
-      >
-        <AlertDialogContent
-          className={darkMode ? "bg-slate-800 border-slate-700" : ""}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle className={themeClasses.text}>
-              Rename Connection
-            </AlertDialogTitle>
-            <AlertDialogDescription className={themeClasses.textMuted}>
-              Enter a new name for this saved connection.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Input
-            value={renameConnectionValue}
-            onChange={(e) => setRenameConnectionValue(e.target.value)}
-            placeholder="New connection name"
-            className={`mt-2 ${themeClasses.input}`}
-            onKeyDown={(e) => e.key === "Enter" && performRenameConnection()}
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              onClick={() => setRenameConnectionDialogOpen(false)}
-              className={
-                darkMode
-                  ? "bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600"
-                  : ""
-              }
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={performRenameConnection}
-              className={themeClasses.button}
-            >
-              Rename
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1769,40 +1506,71 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
 
       {/* Folder Dialog */}
       <AlertDialog open={folderDialogOpen} onOpenChange={setFolderDialogOpen}>
-        <AlertDialogContent
-          className={darkMode ? "bg-slate-800 border-slate-700" : ""}
-        >
+        <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className={themeClasses.text}>
-              Create Folder
-            </AlertDialogTitle>
-            <AlertDialogDescription className={themeClasses.textMuted}>
-              Enter a name for the new folder.
+            <AlertDialogTitle>Create new folder</AlertDialogTitle>
+            <AlertDialogDescription>
+              Enter a folder name to create inside:{" "}
+              <span className="font-mono">{currentPath}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <Input
-            value={folderName}
-            onChange={(e) => setFolderName(e.target.value)}
-            placeholder="Folder name"
-            className={`mt-2 ${themeClasses.input}`}
-            onKeyDown={(e) => e.key === "Enter" && performCreateFolder()}
-          />
-          <AlertDialogFooter>
+
+          <div className="mt-2">
+            <Input
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              placeholder="e.g. Linkedin"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  performCreateFolder();
+                }
+              }}
+              autoFocus
+            />
+          </div>
+
+          <AlertDialogFooter className="mt-4">
             <AlertDialogCancel
-              onClick={() => setFolderDialogOpen(false)}
-              className={
-                darkMode
-                  ? "bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600"
-                  : ""
-              }
+              onClick={() => {
+                setFolderDialogOpen(false);
+                setFolderName("");
+              }}
             >
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={performCreateFolder}
-              className={themeClasses.button}
-            >
+
+            <AlertDialogAction onClick={performCreateFolder}>
               Create
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Rename Dialog */}
+      <AlertDialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename</AlertDialogTitle>
+            <AlertDialogDescription>Enter a new name.</AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                performRename();
+              }
+            }}
+          />
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={performRename}>
+              Rename
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1810,259 +1578,161 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
 
       {/* Run Script Modal */}
       <AlertDialog open={runModalOpen} onOpenChange={setRunModalOpen}>
-        <AlertDialogContent
-          className={`max-w-xl ${darkMode ? "bg-slate-800 border-slate-700" : ""}`}
-        >
+        <AlertDialogContent className="max-w-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle className={themeClasses.text}>
-              Run Script
-            </AlertDialogTitle>
-            <AlertDialogDescription className={themeClasses.textMuted}>
-              Configure and run:{" "}
-              <span className="font-mono text-cyan-500">{runScriptPath}</span>
+            <AlertDialogTitle>Run Script</AlertDialogTitle>
+            <AlertDialogDescription>
+              Script: <span className="font-mono">{runScriptPath || "-"}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
 
-          <div className="space-y-4 mt-4">
+          <div className="space-y-3">
             <div>
-              <label
-                className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-              >
-                Input File (--input)
+              <label className="block text-sm font-bold mb-1">
+                Input File Path (--input)
               </label>
               <Input
                 value={runInput}
                 onChange={(e) => setRunInput(e.target.value)}
-                placeholder="/path/to/input.txt"
-                className={themeClasses.input}
+                placeholder="/root/input.csv"
               />
             </div>
 
             <div>
-              <label
-                className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-              >
+              <label className="block text-sm font-bold mb-1">
                 Output Folder (--out)
               </label>
               <Input
                 value={runOut}
                 onChange={(e) => setRunOut(e.target.value)}
-                placeholder="/path/to/output"
-                className={themeClasses.input}
+                placeholder="/root/output"
               />
+              <div className="text-xs text-gray-500 mt-1">
+                Logs will be written into this folder.
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <label
-                  className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-                >
-                  API Key
-                </label>
+                <label className="block text-sm font-bold mb-1">API Key</label>
                 <Input
                   value={runApiKey}
                   onChange={(e) => setRunApiKey(e.target.value)}
-                  className={themeClasses.input}
+                  placeholder="root"
                 />
               </div>
               <div>
-                <label
-                  className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-                >
+                <label className="block text-sm font-bold mb-1">
                   Concurrency
                 </label>
                 <Input
                   type="number"
                   value={runConcurrency}
-                  onChange={(e) => setRunConcurrency(Number(e.target.value))}
-                  className={themeClasses.input}
+                  onChange={(e) =>
+                    setRunConcurrency(parseInt(e.target.value || "1", 10))
+                  }
+                  placeholder="500"
                 />
               </div>
               <div>
-                <label
-                  className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-                >
-                  Timeout (s)
+                <label className="block text-sm font-bold mb-1">
+                  Timeout (sec)
                 </label>
                 <Input
                   type="number"
                   value={runTimeout}
-                  onChange={(e) => setRunTimeout(Number(e.target.value))}
-                  className={themeClasses.input}
+                  onChange={(e) =>
+                    setRunTimeout(parseInt(e.target.value || "60", 10))
+                  }
+                  placeholder="60"
                 />
               </div>
             </div>
 
             <div>
-              <label
-                className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-              >
+              <label className="block text-sm font-bold mb-1">
                 Servers (--servers)
               </label>
               <textarea
                 value={runServers}
                 onChange={(e) => setRunServers(e.target.value)}
-                className={`w-full h-28 p-3 border rounded-xl font-mono text-sm ${themeClasses.input}`}
+                className="w-full h-28 p-3 border rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500"
                 placeholder="109.199.122.106:9000,109.199.122.106:8888"
               />
+              <div className="text-xs text-gray-500 mt-1">
+                Tip: Use comma-separated list.
+              </div>
             </div>
 
-            <label
-              className={`flex items-center gap-2 text-sm ${themeClasses.text}`}
-            >
+            <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={runResume}
                 onChange={(e) => setRunResume(e.target.checked)}
-                className="rounded border-slate-300"
               />
               Use --resume
             </label>
+
+            <div className="text-xs text-gray-500">
+              After start, go to <b>Terminal</b> and run:{" "}
+              <span className="font-mono">tail -f output/run_*.log</span>
+            </div>
           </div>
 
           <AlertDialogFooter className="mt-4">
-            <AlertDialogCancel
-              onClick={() => setRunModalOpen(false)}
-              className={
-                darkMode
-                  ? "bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600"
-                  : ""
-              }
-            >
+            <AlertDialogCancel onClick={() => setRunModalOpen(false)}>
               Cancel
             </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={runScript}
-              className={themeClasses.button}
-            >
-              <Play size={16} className="mr-2" />
-              Run
-            </AlertDialogAction>
+            <AlertDialogAction onClick={runScript}>Run</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       {!connected ? (
-        /* ===== LOGIN PAGE ===== */
-        <div
-          className={`min-h-screen ${themeClasses.bg} flex items-center justify-center p-4 relative overflow-hidden`}
-        >
-          {/* Background decorations */}
-          <div className="absolute top-0 left-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2" />
-          <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-indigo-500/5 rounded-full blur-2xl -translate-x-1/2 -translate-y-1/2" />
-
-          {/* Dark mode toggle */}
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className={`absolute top-4 right-4 p-3 rounded-xl transition-all duration-300 ${themeClasses.card} border shadow-lg hover:scale-105`}
-          >
-            {darkMode ? (
-              <Sun size={20} className="text-amber-400" />
-            ) : (
-              <Moon size={20} className="text-slate-600" />
-            )}
-          </button>
-
-          <div
-            className={`${themeClasses.card} border rounded-3xl shadow-2xl p-8 w-full max-w-4xl relative z-10`}
-          >
-            {/* Logo */}
-            <div className="flex items-center justify-center mb-6">
-              <div className="relative">
-                <div className="absolute inset-0 bg-linear-to-br from-cyan-400 to-blue-600 rounded-2xl blur-lg opacity-50" />
-                <div className="relative bg-linear-to-br from-cyan-500 to-blue-600 p-4 rounded-2xl shadow-xl">
-                  <Server size={36} className="text-white" />
-                </div>
+        <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-2xl">
+            <div className="flex items-center justify-center mb-4">
+              <div className="bg-orange-500 p-4 rounded-full">
+                <Server size={32} className="text-white" />
               </div>
             </div>
 
-            <h1
-              className={`text-3xl font-bold text-center mb-2 ${themeClasses.text}`}
-            >
+            <h1 className="text-3xl font-bold text-center mb-1">
               SSH Server Manager
             </h1>
-            <p className={`text-center mb-8 ${themeClasses.textMuted}`}>
-              🙃 Secure connection to your Linux servers Design by S!lent Ghost
-              🙂
+            <p className="text-gray-600 text-sm text-center mb-6">
+              Connect to your remote Linux server
             </p>
 
-            {/* Saved Connections */}
             {savedConnections.length > 0 && (
-              <div className="mb-8">
-                <h3
-                  className={`text-sm font-semibold mb-3 ${themeClasses.textSecondary} flex items-center gap-2`}
-                >
-                  <Shield size={14} />
+              <div className="mb-6">
+                <h3 className="text-sm font-bold mb-3 text-gray-700">
                   Saved Connections
                 </h3>
-                <div className="grid grid-cols-3 gap-3 max-h-64 overflow-y-auto pr-4">
+                <div className="grid grid-cols-2 gap-2">
                   {savedConnections.map((conn) => (
                     <div
                       key={conn.id}
-                      className={`group relative p-3 rounded-xl border-2 cursor-pointer transition-all duration-300 hover:scale-[1.02] hover:shadow-lg ${
-                        darkMode
-                          ? "bg-slate-700/50 border-slate-600 hover:border-cyan-500/50"
-                          : "bg-white/50 border-slate-200 hover:border-cyan-400"
-                      }`}
-                      style={{
-                        borderLeftColor: conn.color,
-                        borderLeftWidth: "4px",
-                      }}
+                      className="p-3 border-2 rounded-lg font-bold hover:border-blue-400 cursor-pointer group relative"
+                      style={{ borderColor: conn.color }}
                       onClick={() => loadConnection(conn)}
                     >
                       <div className="flex justify-between items-start">
-                        <div className="flex-1 min-w-0">
-                          <div
-                            className={`font-semibold text-sm ${themeClasses.text} flex items-center gap-1 truncate`}
-                          >
-                            <Zap size={12} className="text-cyan-500 shrink-0" />
-                            <span className="truncate">{conn.name}</span>
-                          </div>
-                          <div
-                            className={`text-xs font-mono mt-1 ${themeClasses.textMuted} truncate`}
-                          >
+                        <div>
+                          <div className="font-medium text-sm">{conn.name}</div>
+                          <div className="text-xs text-gray-500">
                             {conn.username}@{conn.host}
                           </div>
-                          <div
-                            className={`text-xs mt-1 flex items-center gap-1 ${themeClasses.textMuted}`}
-                          >
-                            <Clock size={10} />
-                            {formatLastUsed(conn.lastUsed)}
-                          </div>
                         </div>
-
-                        {/* Action buttons */}
-                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRenameConnectionDialog(conn);
-                            }}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              darkMode
-                                ? "hover:bg-slate-600 text-slate-400"
-                                : "hover:bg-slate-100 text-slate-500"
-                            }`}
-                            title="Rename"
-                          >
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteConnection(conn.id);
-                            }}
-                            className={`p-1.5 rounded-lg transition-colors text-red-500 ${
-                              darkMode
-                                ? "hover:bg-red-500/20"
-                                : "hover:bg-red-50"
-                            }`}
-                            title="Delete"
-                          >
-                            <X size={12} />
-                          </button>
-                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConnection(conn.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 text-red-500 p-1"
+                        >
+                          <X size={14} />
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -2070,12 +1740,9 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
-            {/* Connection Form */}
-            <div className="space-y-5">
+            <div className="space-y-4">
               <div>
-                <label
-                  className={`block text-sm font-semibold mb-2 ${themeClasses.text}`}
-                >
+                <label className="block text-sm font-bold mb-2">
                   Server IP/Host
                 </label>
                 <input
@@ -2084,18 +1751,14 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   onChange={(e) =>
                     setCredentials({ ...credentials, host: e.target.value })
                   }
-                  placeholder="192.168.1.100"
-                  className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:ring-4 ${themeClasses.input}`}
+                  placeholder="144.91.85.229"
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label
-                    className={`block text-sm font-semibold mb-2 ${themeClasses.text}`}
-                  >
-                    Port
-                  </label>
+                  <label className="block text-sm font-bold mb-2">Port</label>
                   <input
                     type="number"
                     value={credentials.port}
@@ -2105,14 +1768,12 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                         port: parseInt(e.target.value || "22", 10),
                       })
                     }
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:ring-4 ${themeClasses.input}`}
+                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
 
                 <div>
-                  <label
-                    className={`block text-sm font-semibold mb-2 ${themeClasses.text}`}
-                  >
+                  <label className="block text-sm font-bold mb-2">
                     Username
                   </label>
                   <input
@@ -2125,67 +1786,45 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                       })
                     }
                     placeholder="root"
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:ring-4 ${themeClasses.input}`}
+                    className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
               </div>
 
               <div>
-                <label
-                  className={`block text-sm font-semibold mb-2 ${themeClasses.text}`}
-                >
-                  Password
-                </label>
+                <label className="block text-sm font-bold mb-2">Password</label>
                 <input
                   type="password"
                   value={credentials.password}
                   onChange={(e) =>
                     setCredentials({ ...credentials, password: e.target.value })
                   }
-                  className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:ring-4 ${themeClasses.input}`}
+                  className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
 
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-2">
                 <button
                   onClick={handleConnect}
                   disabled={loading}
-                  className={`flex-1 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed ${themeClasses.button} hover:scale-[1.02] active:scale-[0.98]`}
+                  className="flex-1 bg-[#1a6d8e] text-white py-3 rounded-lg font-bold hover:bg-[#1a6d8e] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {loading ? (
-                    <>
-                      <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      <Lock size={18} />
-                      Connect
-                    </>
-                  )}
+                  <Lock size={18} />
+                  {loading ? "Connecting..." : "Connect"}
                 </button>
 
                 <button
                   onClick={() => setShowSaveDialog(!showSaveDialog)}
-                  className={`px-5 py-4 border-2 rounded-xl transition-all duration-200 hover:scale-105 ${themeClasses.buttonSecondary}`}
+                  className="px-4 py-3 border rounded-lg cursor-pointer hover:bg-gray-50"
                   title="Save connection"
                 >
                   <Save size={18} />
                 </button>
               </div>
 
-              {/* Save Dialog */}
               {showSaveDialog && (
-                <div
-                  className={`p-5 border-2 rounded-2xl mt-4 ${
-                    darkMode
-                      ? "bg-slate-700/50 border-slate-600"
-                      : "bg-cyan-50/50 border-cyan-200"
-                  }`}
-                >
-                  <label
-                    className={`block text-sm font-semibold mb-2 ${themeClasses.text}`}
-                  >
+                <div className="p-4 border rounded-lg bg-blue-50">
+                  <label className="block text-sm font-bold mb-2">
                     Connection Name
                   </label>
                   <input
@@ -2193,13 +1832,13 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     value={connectionName}
                     onChange={(e) => setConnectionName(e.target.value)}
                     placeholder="My Server"
-                    className={`w-full px-4 py-3 border-2 rounded-xl mb-3 ${themeClasses.input}`}
+                    className="w-full px-3 py-2 border rounded mb-2"
                   />
                   <button
                     onClick={saveConnection}
-                    className={`w-full py-3 rounded-xl font-semibold transition-all duration-200 ${themeClasses.button}`}
+                    className="w-full bg-[#2A7B9B] text-white py-2 rounded-lg cursor-pointer font-bold hover:bg-[#1a6d8e]"
                   >
-                    Save Connection
+                    Save
                   </button>
                 </div>
               )}
@@ -2208,61 +1847,41 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
         </div>
       ) : (
         <>
-          {/* ===== DASHBOARD HEADER ===== */}
-          <div
-            className={`${themeClasses.header} border-b shadow-sm sticky top-0 z-40`}
-          >
+          {/* Header */}
+          <div className="bg-white border-b shadow-sm">
             <div className="max-w-7xl mx-auto px-4 py-4">
               <div className="flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <div className="bg-linear-to-br from-cyan-500 to-blue-600 p-2 rounded-xl shadow-lg">
-                    <Server size={24} className="text-white" />
-                  </div>
-                  <div>
-                    <h1 className={`text-xl font-bold ${themeClasses.text}`}>
-                      Remote Server Manager
-                    </h1>
-                    <p className={`text-sm ${themeClasses.textMuted}`}>
-                      Connected to:{" "}
-                      <span className="text-emerald-500 font-mono font-medium">
-                        {credentials.username}@{credentials.host}
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-800">
+                    Remote Server Manager
+                  </h1>
+                  <p className="text-sm text-gray-600">
+                    Connected to:{" "}
+                    <span className="text-green-600 font-mono">
+                      {credentials.username}@{credentials.host}
+                    </span>
+                    {systemInfo && (
+                      <span className="ml-3 text-gray-400">
+                        | {systemInfo.hostname} ({systemInfo.os})
                       </span>
-                      {systemInfo && (
-                        <span className="ml-3 text-slate-400">
-                          | {systemInfo.hostname} ({systemInfo.os})
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setDarkMode(!darkMode)}
-                    className={`p-2 rounded-xl transition-all duration-200 ${themeClasses.buttonSecondary} border`}
-                  >
-                    {darkMode ? (
-                      <Sun size={18} className="text-amber-400" />
-                    ) : (
-                      <Moon size={18} />
                     )}
-                  </button>
-                  <button
-                    onClick={handleDisconnect}
-                    className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-red-500 to-rose-500 text-white rounded-xl font-medium shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all duration-200"
-                  >
-                    <LogOut size={18} />
-                    Disconnect
-                  </button>
+                  </p>
                 </div>
+                <button
+                  onClick={handleDisconnect}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-400 cursor-pointer text-white rounded"
+                >
+                  <LogOut size={18} />
+                  Disconnect
+                </button>
               </div>
             </div>
           </div>
 
-          {/* ===== TABS ===== */}
+          {/* Tabs */}
           <div className="max-w-7xl mx-auto px-4 mt-4">
             <div
-              className={`flex gap-2 border-b ${darkMode ? "border-slate-700" : "border-slate-200"} overflow-x-auto pb-px`}
+              className="flex gap-2 border-b overflow-x-auto"
               onDragOver={(e) => {
                 e.preventDefault();
                 const types = Array.from(e.dataTransfer.types || []);
@@ -2298,10 +1917,10 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center cursor-pointer gap-2 px-5 py-3 border-b-2 transition-all duration-200 whitespace-nowrap font-medium ${
+                  className={`flex items-center cursor-pointer gap-2 px-4 py-2 border-b-2 transition-colors whitespace-nowrap ${
                     activeTab === tab.id
-                      ? "border-cyan-500 text-cyan-600"
-                      : `border-transparent ${themeClasses.textMuted} hover:text-cyan-500`
+                      ? "border-blue-500 text-blue-600"
+                      : "border-transparent text-gray-600 hover:text-gray-800"
                   }`}
                 >
                   <tab.icon size={18} />
@@ -2313,9 +1932,9 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                 <div
                   key={p.path}
                   className={`flex items-center border-b-2 whitespace-nowrap ${
-                    activeTab === "files" && currentPath === p.path
-                      ? "border-emerald-500 text-emerald-600"
-                      : `border-transparent ${themeClasses.textMuted} hover:text-emerald-500`
+                    currentPath === p.path
+                      ? "border-emerald-600 text-emerald-700"
+                      : "border-transparent text-gray-600 hover:text-gray-800"
                   }`}
                   onDragEnter={(e) => {
                     e.preventDefault();
@@ -2340,7 +1959,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   title={p.path}
                 >
                   <span
-                    className="px-2 py-2 cursor-grab active:cursor-grabbing select-none opacity-50 hover:opacity-100"
+                    className="px-2 py-2 cursor-grab active:cursor-grabbing select-none"
                     draggable
                     onDragStart={(e) => {
                       dragPinnedIndexRef.current = idx;
@@ -2374,69 +1993,10 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               ))}
             </div>
 
-            {/* ===== Transfer Progress Bar ===== */}
-            {transferProgress && (
-              <div
-                className={`mt-6 p-4 rounded-xl border ${darkMode ? "bg-slate-800/80 border-slate-700" : "bg-white border-slate-200"}`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {transferProgress.type === "upload" ? (
-                      <Upload size={16} className="text-violet-500 shrink-0" />
-                    ) : (
-                      <Download size={16} className="text-cyan-500 shrink-0" />
-                    )}
-                    <span
-                      className={`text-sm font-medium truncate ${darkMode ? "text-slate-200" : "text-slate-700"}`}
-                    >
-                      {transferProgress.type === "upload"
-                        ? "Uploading"
-                        : "Downloading"}
-                      : {transferProgress.filename}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs shrink-0 ml-3">
-                    <span
-                      className={darkMode ? "text-slate-400" : "text-slate-500"}
-                    >
-                      {formatBytes(transferProgress.loaded)} /{" "}
-                      {formatBytes(transferProgress.total)}
-                    </span>
-                    <span
-                      className={`font-mono font-bold ${darkMode ? "text-cyan-400" : "text-cyan-600"}`}
-                    >
-                      {transferProgress.speed}
-                    </span>
-                    <span
-                      className={`font-bold text-base ${darkMode ? "text-slate-200" : "text-slate-700"}`}
-                    >
-                      {transferProgress.percent}%
-                    </span>
-                  </div>
-                </div>
-                <div
-                  className={`w-full rounded-full h-2.5 ${darkMode ? "bg-slate-700" : "bg-slate-200"}`}
-                >
-                  <div
-                    className={`h-2.5 rounded-full transition-all duration-300 ${
-                      transferProgress.type === "upload"
-                        ? "bg-linear-to-r from-violet-500 to-purple-500"
-                        : "bg-linear-to-r from-cyan-500 to-blue-500"
-                    }`}
-                    style={{ width: `${transferProgress.percent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Remove pinned drop zone */}
             {Array.isArray(pinnedFolders) && pinnedFolders.length > 0 && (
               <div
-                className={`ml-auto px-3 py-3 text-sm mt-6 rounded-xl font-semibold border-2 border-dashed select-none ${
-                  darkMode
-                    ? "text-slate-500 border-slate-600"
-                    : "text-slate-400 border-slate-300"
-                }`}
+                className="ml-auto px-3 py-3 text-sm mt-6 rounded font-bold border border-dashed text-gray-500 select-none"
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.dataTransfer.dropEffect = "move";
@@ -2461,42 +2021,35 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
-            {/* ===== FILES TAB ===== */}
+            {/* Files */}
             {activeTab === "files" && (
-              <div
-                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-              >
+              <div className="mt-6 bg-white rounded-lg shadow p-6">
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2">
                     <button
                       onClick={navigateUp}
-                      className={`p-2 rounded-xl transition-all ${
-                        darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"
-                      }`}
+                      className="p-2 hover:bg-gray-100 rounded"
                       title="Go up"
                     >
                       ↑
                     </button>
-                    <span
-                      className={`font-mono text-sm ${themeClasses.textMuted}`}
-                    >
+                    <span className="font-mono text-sm text-gray-600">
                       {currentPath}
                     </span>
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={handleCreateFolder}
-                      className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-cyan-500 to-blue-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all"
+                      className="flex items-center gap-2 px-4 py-2 bg-[#087ca6] text-white rounded cursor-pointer hover:bg-[#106d8f] text-sm"
                     >
                       <FolderPlus size={18} />
                       New Folder
                     </button>
-                    <label className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-violet-500 to-purple-500 text-white rounded-xl cursor-pointer text-sm font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
+                    <label className="flex items-center gap-2 px-4 py-2 bg-[#a881af] text-white rounded hover:bg-[#a881a8] cursor-pointer text-sm">
                       <Upload size={18} />
                       Upload
                       <input
                         type="file"
-                        multiple
                         onChange={handleUpload}
                         className="hidden"
                       />
@@ -2504,10 +2057,10 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     <button
                       onClick={pasteClipboard}
                       disabled={!clipboard}
-                      className={`flex items-center cursor-pointer gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                      className={`flex items-center cursor-pointer gap-2 px-4 py-2 rounded text-sm ${
                         clipboard
-                          ? "bg-linear-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40"
-                          : `${darkMode ? "bg-slate-700 text-slate-500" : "bg-slate-200 text-slate-400"} cursor-not-allowed`
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : "bg-gray-200 text-gray-500 cursor-not-allowed"
                       }`}
                     >
                       <ClipboardPaste size={18} />
@@ -2516,26 +2069,16 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
 
                     <button
                       onClick={() => loadFiles()}
-                      className={`p-2 border rounded-xl transition-all ${
-                        darkMode
-                          ? "border-slate-600 hover:bg-slate-700"
-                          : "border-slate-200 hover:bg-slate-50"
-                      }`}
+                      className="p-2 border rounded cursor-pointer hover:bg-gray-50"
                     >
-                      <RefreshCw size={18} className={themeClasses.textMuted} />
+                      <RefreshCw size={18} />
                     </button>
                   </div>
                 </div>
 
-                <div
-                  className={`border rounded-xl overflow-hidden max-h-96 overflow-y-auto ${
-                    darkMode ? "border-slate-700" : "border-slate-200"
-                  }`}
-                >
+                <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
                   {files.length === 0 ? (
-                    <div
-                      className={`p-8 text-center ${themeClasses.textMuted}`}
-                    >
+                    <div className="p-8 text-center text-gray-500">
                       No files found
                     </div>
                   ) : (
@@ -2546,11 +2089,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                           if (item.type === "folder") loadFiles(item.path);
                           else openEditor(item.path);
                         }}
-                        className={`flex items-center gap-2 p-3 cursor-pointer group transition-colors ${
-                          darkMode
-                            ? "hover:bg-slate-700/50"
-                            : "hover:bg-slate-50"
-                        }`}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-100 cursor-pointer group"
                         draggable={item.type === "folder"}
                         onDragStart={(e) => {
                           if (item.type !== "folder") return;
@@ -2565,54 +2104,38 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                         }}
                       >
                         {item.type === "folder" ? (
-                          <Folder size={18} className="text-cyan-500" />
+                          <Folder size={18} className="text-blue-500" />
                         ) : (
-                          <File size={18} className={themeClasses.textMuted} />
+                          <File size={18} className="text-gray-500" />
                         )}
 
-                        <span className={`flex-1 text-sm ${themeClasses.text}`}>
-                          {item.name}
-                        </span>
+                        <span className="flex-1 text-sm">{item.name}</span>
 
-                        <span className={`text-xs ${themeClasses.textMuted}`}>
+                        <span className="text-xs text-gray-500">
                           {item.sizeStr}
                         </span>
-                        <span className={`text-xs ${themeClasses.textMuted}`}>
+                        <span className="text-xs text-gray-400">
                           {item.modified}
                         </span>
 
-                        <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                        <div className="opacity-0 group-hover:opacity-100 flex gap-1">
                           {item.type === "file" && (
                             <>
                               <button
                                 onClick={() => openEditor(item.path)}
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  darkMode
-                                    ? "hover:bg-slate-600"
-                                    : "hover:bg-slate-200"
-                                }`}
+                                className="p-1 hover:bg-gray-200 rounded"
                                 title="Edit"
                               >
-                                <Edit
-                                  size={14}
-                                  className={themeClasses.textMuted}
-                                />
+                                <Edit size={14} />
                               </button>
                               <button
                                 onClick={() =>
                                   handleDownload(item.path, item.name)
                                 }
                                 title="Download"
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  darkMode
-                                    ? "hover:bg-slate-600"
-                                    : "hover:bg-slate-200"
-                                }`}
+                                className="p-1 hover:bg-gray-200 rounded"
                               >
-                                <Download
-                                  size={14}
-                                  className={themeClasses.textMuted}
-                                />
+                                <Download size={14} />
                               </button>
                             </>
                           )}
@@ -2620,11 +2143,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                           {item.type === "folder" && (
                             <button
                               onClick={() => loadFiles(item.path)}
-                              className={`p-1.5 rounded-lg text-cyan-500 transition-colors ${
-                                darkMode
-                                  ? "hover:bg-slate-600"
-                                  : "hover:bg-slate-200"
-                              }`}
+                              className="p-1 hover:bg-gray-200 rounded text-blue-500"
                             >
                               <ChevronRight size={14} />
                             </button>
@@ -2636,11 +2155,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                                 e.stopPropagation();
                                 openRunScriptModal(item.path);
                               }}
-                              className={`p-1.5 rounded-lg text-emerald-500 transition-colors ${
-                                darkMode
-                                  ? "hover:bg-slate-600"
-                                  : "hover:bg-slate-200"
-                              }`}
+                              className="p-1 rounded"
                               title="Run"
                             >
                               <Play size={14} />
@@ -2649,41 +2164,23 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
 
                           <button
                             onClick={() => openRenameDialog(item)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              darkMode
-                                ? "hover:bg-slate-600"
-                                : "hover:bg-slate-200"
-                            }`}
+                            className="p-1 hover:bg-gray-200 rounded"
                             title="Rename"
                           >
-                            <Pencil
-                              size={14}
-                              className={themeClasses.textMuted}
-                            />
+                            <Edit size={14} />
                           </button>
 
                           <button
                             onClick={() => copyToClipboard(item)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              darkMode
-                                ? "hover:bg-slate-600"
-                                : "hover:bg-slate-200"
-                            }`}
+                            className="p-1 hover:bg-gray-200 rounded"
                             title="Copy"
                           >
-                            <Copy
-                              size={14}
-                              className={themeClasses.textMuted}
-                            />
+                            <Copy size={14} />
                           </button>
 
                           <button
                             onClick={() => handleDelete(item.path)}
-                            className={`p-1.5 rounded-lg text-red-500 transition-colors ${
-                              darkMode
-                                ? "hover:bg-red-500/20"
-                                : "hover:bg-red-50"
-                            }`}
+                            className="p-1 hover:bg-gray-200 rounded text-red-500"
                             title="Delete"
                           >
                             <Trash2 size={14} />
@@ -2696,35 +2193,30 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
-            {/* ===== TERMINAL TAB ===== */}
+            {/* ✅ Terminal (REAL xterm.js) */}
             {activeTab === "terminal" && (
-              <div
-                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-              >
+              <div className="mt-6 bg-white rounded-lg shadow p-6">
                 <div
                   ref={xtermContainerRef}
-                  className="rounded-xl overflow-hidden h-105 w-full bg-gray-900"
+                  className="bg-gray-900 rounded-lg p-2 h-105 w-full"
                 />
+                {/* <div className="text-xs text-gray-500 mt-2">
+                  Real interactive terminal (tmux / nano / htop supported).
+                </div> */}
               </div>
             )}
 
-            {/* ===== EDITOR TAB ===== */}
+            {/* Editor */}
             {activeTab === "editor" && (
-              <div
-                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-              >
+              <div className="mt-6 bg-white rounded-lg shadow p-6">
                 {editorFile ? (
                   <>
                     <div className="flex justify-between items-center mb-4">
                       <div className="flex items-center gap-2">
-                        <Edit size={18} className="text-cyan-500" />
-                        <span
-                          className={`font-mono text-sm ${themeClasses.text}`}
-                        >
-                          {editorFile}
-                        </span>
+                        <Edit size={18} />
+                        <span className="font-mono text-sm">{editorFile}</span>
                         {editorModified && (
-                          <span className="text-orange-500 text-xs font-medium bg-orange-500/10 px-2 py-0.5 rounded-full">
+                          <span className="text-orange-500 text-xs">
                             ● Modified
                           </span>
                         )}
@@ -2733,14 +2225,14 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                         <button
                           onClick={saveEditorFile}
                           disabled={!editorModified}
-                          className={`flex items-center cursor-pointer gap-2 px-4 py-2 rounded-xl font-medium transition-all disabled:opacity-50 ${themeClasses.button}`}
+                          className="flex items-center cursor-pointer gap-2 px-4 py-2 text-white rounded-lg bg-black disabled:opacity-50"
                         >
                           <Save size={18} />
                           Save
                         </button>
                         <button
                           onClick={closeEditor}
-                          className={`flex items-center cursor-pointer gap-2 px-4 py-2 border rounded-xl transition-all ${themeClasses.buttonSecondary}`}
+                          className="flex items-center cursor-pointer gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
                         >
                           <X size={18} />
                           Close
@@ -2754,12 +2246,12 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                         setEditorContent(e.target.value);
                         setEditorModified(e.target.value !== originalContent);
                       }}
-                      className={`w-full h-96 p-4 font-mono text-sm border-2 rounded-xl focus:ring-4 transition-all ${themeClasses.input}`}
+                      className="w-full h-96 p-4 font-mono text-sm border rounded-lg focus:ring-2 focus:ring-blue-500"
                       spellCheck={false}
                     />
                   </>
                 ) : (
-                  <div className={`p-12 text-center ${themeClasses.textMuted}`}>
+                  <div className="p-12 text-center text-gray-500">
                     <Edit size={48} className="mx-auto mb-4 opacity-50" />
                     <p>Double-click a file in the File Manager to edit it</p>
                   </div>
@@ -2767,96 +2259,54 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
-            {/* ===== PROCESSES TAB ===== */}
+            {/* Processes */}
             {activeTab === "processes" && (
-              <div
-                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-              >
+              <div className="mt-6 bg-white rounded-lg shadow p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className={`text-lg font-bold ${themeClasses.text}`}>
+                  <h3 className="text-lg font-bold">
                     Running Processes (Top 20 by Memory)
                   </h3>
                   <button
                     onClick={loadProcesses}
-                    className={`p-2 border rounded-xl transition-all ${
-                      darkMode
-                        ? "border-slate-600 hover:bg-slate-700"
-                        : "border-slate-200 hover:bg-slate-50"
-                    }`}
+                    className="p-2 border rounded hover:bg-gray-50"
                   >
-                    <RefreshCw size={18} className={themeClasses.textMuted} />
+                    <RefreshCw size={18} />
                   </button>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
-                    <thead
-                      className={darkMode ? "bg-slate-700/50" : "bg-slate-50"}
-                    >
+                    <thead className="bg-gray-50">
                       <tr>
-                        <th
-                          className={`px-4 py-3 text-left font-semibold ${themeClasses.text}`}
-                        >
-                          PID
-                        </th>
-                        <th
-                          className={`px-4 py-3 text-left font-semibold ${themeClasses.text}`}
-                        >
-                          CPU %
-                        </th>
-                        <th
-                          className={`px-4 py-3 text-left font-semibold ${themeClasses.text}`}
-                        >
-                          MEM %
-                        </th>
-                        <th
-                          className={`px-4 py-3 text-left font-semibold ${themeClasses.text}`}
-                        >
-                          Status
-                        </th>
-                        <th
-                          className={`px-4 py-3 text-left font-semibold ${themeClasses.text}`}
-                        >
-                          Command
-                        </th>
-                        <th
-                          className={`px-4 py-3 text-left font-semibold ${themeClasses.text}`}
-                        >
-                          Action
-                        </th>
+                        <th className="px-4 py-2 text-left">PID</th>
+                        <th className="px-4 py-2 text-left">CPU %</th>
+                        <th className="px-4 py-2 text-left">MEM %</th>
+                        <th className="px-4 py-2 text-left">Status</th>
+                        <th className="px-4 py-2 text-left">Command</th>
+                        <th className="px-4 py-2 text-left">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {processes.map((proc) => (
                         <tr
                           key={proc.pid}
-                          className={`border-t transition-colors ${
-                            darkMode
-                              ? "border-slate-700 hover:bg-slate-700/30"
-                              : "border-slate-100 hover:bg-slate-50"
-                          }`}
+                          className="border-t hover:bg-gray-50"
                         >
-                          <td className={`px-4 py-3 ${themeClasses.text}`}>
-                            {proc.pid}
-                          </td>
-                          <td className={`px-4 py-3 ${themeClasses.text}`}>
+                          <td className="px-4 py-2">{proc.pid}</td>
+                          <td className="px-4 py-2">
                             {proc.cpuPercent.toFixed(1)}%
                           </td>
-                          <td className={`px-4 py-3 ${themeClasses.text}`}>
+                          <td className="px-4 py-2">
                             {proc.memoryPercent.toFixed(1)}%
                           </td>
-                          <td className={`px-4 py-3 ${themeClasses.text}`}>
-                            {proc.status}
-                          </td>
-                          <td
-                            className={`px-4 py-3 font-mono text-xs ${themeClasses.textMuted}`}
-                          >
+                          <td className="px-4 py-2">{proc.status}</td>
+                          <td className="px-4 py-2 font-mono text-xs">
                             {proc.command.substring(0, 60)}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-2">
                             <button
                               onClick={() => killProcess(proc.pid)}
-                              className="text-red-500 hover:text-red-600 text-xs font-medium px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/20 transition-colors"
+                              className="text-red-500 hover:text-red-700 text-xs"
                             >
                               Kill
                             </button>
@@ -2869,142 +2319,96 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
-            {/* ===== MONITOR TAB ===== */}
+            {/* Monitor */}
             {activeTab === "monitor" && systemInfo && (
               <div className="mt-6 space-y-4">
                 <div className="grid grid-cols-3 gap-4">
-                  {/* CPU */}
-                  <div
-                    className={`${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-                  >
+                  <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="bg-linear-to-br from-cyan-400 to-blue-500 p-3 rounded-xl shadow-lg">
-                        <Cpu size={24} className="text-white" />
+                      <div className="bg-blue-100 p-3 rounded-lg">
+                        <Cpu size={24} className="text-blue-600" />
                       </div>
                       <div>
-                        <div className={`text-sm ${themeClasses.textMuted}`}>
-                          CPU Usage
-                        </div>
-                        <div
-                          className={`text-2xl font-bold ${themeClasses.text}`}
-                        >
+                        <div className="text-sm text-gray-600">CPU Usage</div>
+                        <div className="text-2xl font-bold">
                           {systemInfo.cpuPercent}%
                         </div>
                       </div>
                     </div>
-                    <div
-                      className={`w-full rounded-full h-2.5 ${darkMode ? "bg-slate-700" : "bg-slate-200"}`}
-                    >
+                    <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className="bg-linear-to-r from-cyan-500 to-blue-500 h-2.5 rounded-full transition-all duration-500"
+                        className="bg-blue-500 h-2 rounded-full transition-all"
                         style={{ width: `${systemInfo.cpuPercent}%` }}
                       />
                     </div>
                   </div>
 
-                  {/* Memory */}
-                  <div
-                    className={`${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-                  >
+                  <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="bg-linear-to-br from-emerald-400 to-green-500 p-3 rounded-xl shadow-lg">
-                        <Database size={24} className="text-white" />
+                      <div className="bg-green-100 p-3 rounded-lg">
+                        <Database size={24} className="text-green-600" />
                       </div>
                       <div>
-                        <div className={`text-sm ${themeClasses.textMuted}`}>
-                          Memory
-                        </div>
-                        <div
-                          className={`text-2xl font-bold ${themeClasses.text}`}
-                        >
+                        <div className="text-sm text-gray-600">Memory</div>
+                        <div className="text-2xl font-bold">
                           {systemInfo.memory.percent}%
                         </div>
-                        <div className={`text-xs ${themeClasses.textMuted}`}>
+                        <div className="text-xs text-gray-500">
                           {systemInfo.memory.usedGb.toFixed(1)} /{" "}
                           {systemInfo.memory.totalGb.toFixed(1)} GB
                         </div>
                       </div>
                     </div>
-                    <div
-                      className={`w-full rounded-full h-2.5 ${darkMode ? "bg-slate-700" : "bg-slate-200"}`}
-                    >
+                    <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className="bg-linear-to-r from-emerald-500 to-green-500 h-2.5 rounded-full transition-all duration-500"
+                        className="bg-green-500 h-2 rounded-full transition-all"
                         style={{ width: `${systemInfo.memory.percent}%` }}
                       />
                     </div>
                   </div>
 
-                  {/* Disk */}
-                  <div
-                    className={`${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-                  >
+                  <div className="bg-white rounded-lg shadow p-6">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="bg-linear-to-br from-violet-400 to-purple-500 p-3 rounded-xl shadow-lg">
-                        <HardDrive size={24} className="text-white" />
+                      <div className="bg-purple-100 p-3 rounded-lg">
+                        <HardDrive size={24} className="text-purple-600" />
                       </div>
                       <div>
-                        <div className={`text-sm ${themeClasses.textMuted}`}>
-                          Disk Usage
-                        </div>
-                        <div
-                          className={`text-2xl font-bold ${themeClasses.text}`}
-                        >
+                        <div className="text-sm text-gray-600">Disk Usage</div>
+                        <div className="text-2xl font-bold">
                           {systemInfo.disk.percent}%
                         </div>
-                        <div className={`text-xs ${themeClasses.textMuted}`}>
+                        <div className="text-xs text-gray-500">
                           {systemInfo.disk.used} / {systemInfo.disk.total}
                         </div>
                       </div>
                     </div>
-                    <div
-                      className={`w-full rounded-full h-2.5 ${darkMode ? "bg-slate-700" : "bg-slate-200"}`}
-                    >
+                    <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
-                        className="bg-linear-to-r from-violet-500 to-purple-500 h-2.5 rounded-full transition-all duration-500"
+                        className="bg-purple-500 h-2 rounded-full transition-all"
                         style={{ width: `${systemInfo.disk.percent}%` }}
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* System Info */}
-                <div
-                  className={`${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
-                >
-                  <h3 className={`text-lg font-bold mb-4 ${themeClasses.text}`}>
-                    System Information
-                  </h3>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div
-                      className={`p-4 rounded-xl ${darkMode ? "bg-slate-700/50" : "bg-slate-50"}`}
-                    >
-                      <span className={themeClasses.textMuted}>Hostname</span>
-                      <div
-                        className={`font-mono font-medium mt-1 ${themeClasses.text}`}
-                      >
+                <div className="bg-white rounded-lg shadow p-6">
+                  <h3 className="text-lg font-bold mb-4">System Information</h3>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Hostname:</span>
+                      <span className="ml-2 font-mono">
                         {systemInfo.hostname}
-                      </div>
+                      </span>
                     </div>
-                    <div
-                      className={`p-4 rounded-xl ${darkMode ? "bg-slate-700/50" : "bg-slate-50"}`}
-                    >
-                      <span className={themeClasses.textMuted}>OS</span>
-                      <div
-                        className={`font-mono font-medium mt-1 ${themeClasses.text}`}
-                      >
-                        {systemInfo.os}
-                      </div>
+                    <div>
+                      <span className="text-gray-600">OS:</span>
+                      <span className="ml-2 font-mono">{systemInfo.os}</span>
                     </div>
-                    <div
-                      className={`p-4 rounded-xl ${darkMode ? "bg-slate-700/50" : "bg-slate-50"}`}
-                    >
-                      <span className={themeClasses.textMuted}>Uptime</span>
-                      <div
-                        className={`font-mono font-medium mt-1 ${themeClasses.text}`}
-                      >
+                    <div>
+                      <span className="text-gray-600">Uptime:</span>
+                      <span className="ml-2 font-mono">
                         {formatUptime(systemInfo.uptimeSeconds)}
-                      </div>
+                      </span>
                     </div>
                   </div>
                 </div>
