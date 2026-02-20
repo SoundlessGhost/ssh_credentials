@@ -396,7 +396,7 @@ const EnhancedSSHManager: React.FC = () => {
 
           state.timer = setTimeout(tick, 600);
         } catch (e: any) {
-          console.log("Transfer progress error:", e);
+          console.log(e);
           // transient network errors: retry
           state.timer = setTimeout(tick, 1000);
         }
@@ -1086,88 +1086,88 @@ const EnhancedSSHManager: React.FC = () => {
     const fileList = e.target.files;
     if (!fileList || fileList.length === 0) return;
 
-    const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
-    const CHUNK_THRESHOLD = 32 * 1024 * 1024; // 32MB (use chunked above this)
+    const CHUNK_SIZE = 20 * 1024 * 1024; // 20MB
+    // Always use chunked upload for reliability (works for small & large files)
 
-    const uploadSingle = async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const startTime = Date.now();
+    // const uploadSingle = async (file: File) => {
+    //   const formData = new FormData();
+    //   formData.append("file", file);
+    //   const startTime = Date.now();
 
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open(
-          "POST",
-          `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-        );
+    //   await new Promise<void>((resolve, reject) => {
+    //     const xhr = new XMLHttpRequest();
+    //     xhr.open(
+    //       "POST",
+    //       `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+    //     );
 
-        xhr.upload.onprogress = (evt) => {
-          if (evt.lengthComputable) {
-            const elapsed = (Date.now() - startTime) / 1000;
-            const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
-            const speedStr =
-              speedBps > 1024 * 1024
-                ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-                : `${(speedBps / 1024).toFixed(0)} KB/s`;
-            setTransferProgress({
-              active: true,
-              type: "upload",
-              filename: file.name,
-              loaded: evt.loaded,
-              total: evt.total,
-              percent: Math.round((evt.loaded / evt.total) * 100),
-              speed: speedStr,
-              stage: "api",
-            });
-          }
-        };
+    //     xhr.upload.onprogress = (evt) => {
+    //       if (evt.lengthComputable) {
+    //         const elapsed = (Date.now() - startTime) / 1000;
+    //         const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
+    //         const speedStr =
+    //           speedBps > 1024 * 1024
+    //             ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
+    //             : `${(speedBps / 1024).toFixed(0)} KB/s`;
+    //         setTransferProgress({
+    //           active: true,
+    //           type: "upload",
+    //           filename: file.name,
+    //           loaded: evt.loaded,
+    //           total: evt.total,
+    //           percent: Math.round((evt.loaded / evt.total) * 100),
+    //           speed: speedStr,
+    //           stage: "api",
+    //         });
+    //       }
+    //     };
 
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const data = JSON.parse(xhr.responseText);
-              if (data.success && data.transfer_id) {
-                setTransferProgress({
-                  active: true,
-                  type: "upload",
-                  filename: file.name,
-                  loaded: 0,
-                  total: file.size,
-                  percent: 0,
-                  speed: "0 KB/s",
-                  transferId: String(data.transfer_id),
-                  status: "uploading",
-                  stage: "remote",
-                });
+    //     xhr.onload = () => {
+    //       if (xhr.status >= 200 && xhr.status < 300) {
+    //         try {
+    //           const data = JSON.parse(xhr.responseText);
+    //           if (data.success && data.transfer_id) {
+    //             setTransferProgress({
+    //               active: true,
+    //               type: "upload",
+    //               filename: file.name,
+    //               loaded: 0,
+    //               total: file.size,
+    //               percent: 0,
+    //               speed: "0 KB/s",
+    //               transferId: String(data.transfer_id),
+    //               status: "uploading",
+    //               stage: "remote",
+    //             });
 
-                monitorUploadTransfer(
-                  String(data.transfer_id),
-                  file.name,
-                  file.size,
-                )
-                  .then(() => resolve())
-                  .catch((err: any) => reject(err));
-                return;
-              }
+    //             monitorUploadTransfer(
+    //               String(data.transfer_id),
+    //               file.name,
+    //               file.size,
+    //             )
+    //               .then(() => resolve())
+    //               .catch((err: any) => reject(err));
+    //             return;
+    //           }
 
-              if (data.success) {
-                resolve();
-                return;
-              }
+    //           if (data.success) {
+    //             resolve();
+    //             return;
+    //           }
 
-              reject(new Error(data?.detail || "Upload failed"));
-            } catch {
-              reject(new Error("Invalid response"));
-            }
-          } else {
-            reject(new Error(`HTTP ${xhr.status}`));
-          }
-        };
+    //           reject(new Error(data?.detail || "Upload failed"));
+    //         } catch {
+    //           reject(new Error("Invalid response"));
+    //         }
+    //       } else {
+    //         reject(new Error(`HTTP ${xhr.status}`));
+    //       }
+    //     };
 
-        xhr.onerror = () => reject(new Error("Network error"));
-        xhr.send(formData);
-      });
-    };
+    //     xhr.onerror = () => reject(new Error("Network error"));
+    //     xhr.send(formData);
+    //   });
+    // };
 
     const uploadChunked = async (file: File) => {
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
@@ -1283,12 +1283,7 @@ const EnhancedSSHManager: React.FC = () => {
         const file = fileList[i];
 
         try {
-          if (file.size >= CHUNK_THRESHOLD) {
-            await uploadChunked(file);
-          } else {
-            await uploadSingle(file);
-          }
-
+          await uploadChunked(file);
           setTransferProgress(null);
           loadFiles();
           showAlert("Uploaded", `${file.name} (${formatBytes(file.size)})`);
@@ -1310,15 +1305,38 @@ const EnhancedSSHManager: React.FC = () => {
   };
 
   const handleDownload = async (path: string, filename: string) => {
+    const url = `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`;
     const startTime = Date.now();
+
     try {
-      const res = await fetch(
-        `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`,
-      );
-      if (!res.ok) {
-        showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
+      const canStreamToDisk =
+        typeof (window as any).showSaveFilePicker === "function";
+
+      // Best reliability fallback: let the browser download directly (no JS buffering)
+      if (!canStreamToDisk) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.click();
+        showAlert("Download started", filename);
         return;
       }
+
+      const res = await fetch(url);
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      // Try to infer filename from Content-Disposition
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="?([^";]+)"?/i.exec(cd);
+      const outName = m?.[1] || filename;
+
+      const picker = await (window as any).showSaveFilePicker({
+        suggestedName: outName,
+      });
+      const writable = await picker.createWritable();
 
       const contentLength = parseInt(
         res.headers.get("Content-Length") ||
@@ -1326,27 +1344,16 @@ const EnhancedSSHManager: React.FC = () => {
           "0",
         10,
       );
-      const reader = res.body?.getReader();
 
-      if (!reader) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-        showAlert("Downloaded", filename);
-        return;
-      }
-
-      const chunks: Uint8Array[] = [];
+      const reader = res.body.getReader();
       let received = 0;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
+        await writable.write(value);
         received += value.length;
+
         if (contentLength > 0) {
           const elapsed = (Date.now() - startTime) / 1000;
           const speedBps = elapsed > 0 ? received / elapsed : 0;
@@ -1357,7 +1364,7 @@ const EnhancedSSHManager: React.FC = () => {
           setTransferProgress({
             active: true,
             type: "download",
-            filename,
+            filename: outName,
             loaded: received,
             total: contentLength,
             percent: Math.round((received / contentLength) * 100),
@@ -1365,18 +1372,16 @@ const EnhancedSSHManager: React.FC = () => {
           });
         }
       }
+
+      await writable.close();
       setTransferProgress(null);
-      const blob = new Blob(chunks as BlobPart[]);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      showAlert("Downloaded", `${filename} (${formatBytes(received)})`);
-      xtermPrint(`[DOWNLOAD] ${filename} (${formatBytes(received)})`);
+      showAlert("Downloaded", outName);
     } catch (err: any) {
       setTransferProgress(null);
+
+      // If user cancels Save dialog, keep it quiet
+      if (err?.name === "AbortError") return;
+
       showAlert(
         "Download failed",
         err?.message || "Unknown error",
@@ -1420,20 +1425,37 @@ const EnhancedSSHManager: React.FC = () => {
     folderPath: string,
     folderName: string,
   ) => {
+    const url = `${API_URL}/api/ssh/download-folder?session_id=${sessionId}&path=${encodeURIComponent(folderPath)}`;
     const startTime = Date.now();
+
     try {
-      const res = await fetch(
-        `${API_URL}/api/ssh/download-folder?session_id=${sessionId}&path=${encodeURIComponent(folderPath)}`,
-      );
-      if (!res.ok) {
-        showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
+      const canStreamToDisk =
+        typeof (window as any).showSaveFilePicker === "function";
+
+      if (!canStreamToDisk) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.click();
+        showAlert("Download started", folderName);
         return;
       }
 
-      // try to infer filename from Content-Disposition
+      const res = await fetch(url);
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      // infer filename
       const cd = res.headers.get("Content-Disposition") || "";
       const m = /filename="?([^";]+)"?/i.exec(cd);
-      const filename = m?.[1] || `${folderName}.zip`;
+      const outName = m?.[1] || `${folderName}.zip`;
+
+      const picker = await (window as any).showSaveFilePicker({
+        suggestedName: outName,
+      });
+      const writable = await picker.createWritable();
 
       const contentLength = parseInt(
         res.headers.get("Content-Length") ||
@@ -1441,26 +1463,14 @@ const EnhancedSSHManager: React.FC = () => {
           "0",
         10,
       );
-      const reader = res.body?.getReader();
 
-      if (!reader) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        a.click();
-        window.URL.revokeObjectURL(url);
-        showAlert("Downloaded", filename);
-        return;
-      }
-
-      const chunks: Uint8Array[] = [];
+      const reader = res.body.getReader();
       let received = 0;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
+        await writable.write(value);
         received += value.length;
 
         if (contentLength > 0) {
@@ -1473,7 +1483,7 @@ const EnhancedSSHManager: React.FC = () => {
           setTransferProgress({
             active: true,
             type: "download",
-            filename,
+            filename: outName,
             loaded: received,
             total: contentLength,
             percent: Math.round((received / contentLength) * 100),
@@ -1482,18 +1492,12 @@ const EnhancedSSHManager: React.FC = () => {
         }
       }
 
+      await writable.close();
       setTransferProgress(null);
-      const blob = new Blob(chunks as BlobPart[]);
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      showAlert("Downloaded", `${filename} (${formatBytes(received)})`);
-      xtermPrint(`[DOWNLOAD] ${filename} (${formatBytes(received)})`);
+      showAlert("Downloaded", outName);
     } catch (err: any) {
       setTransferProgress(null);
+      if (err?.name === "AbortError") return;
       showAlert(
         "Download failed",
         err?.message || "Unknown error",
