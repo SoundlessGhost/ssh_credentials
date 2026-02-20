@@ -51,8 +51,8 @@ import {
   Shield,
 } from "lucide-react";
 
-// const API_URL = "https://api.dekhai.org";
-const API_URL = "http://localhost:2247";
+const API_URL = "https://api.dekhai.org";
+// const API_URL = "http://localhost:2247";
 
 // ===== All Interface =====
 interface SSHCredentials {
