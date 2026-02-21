@@ -1017,7 +1017,7 @@ const EnhancedSSHManager: React.FC = () => {
                 filename: `${file.name} (sending...)`,
                 loaded: evt.loaded,
                 total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 50), // Phase1 = 0-50%
+                percent: Math.round((evt.loaded / evt.total) * 90), // Phase1 = 0-90%
                 speed: speedStr,
               });
             }
@@ -1063,7 +1063,7 @@ const EnhancedSSHManager: React.FC = () => {
             filename: `${file.name} (SFTP...)`,
             loaded: 0,
             total: file.size,
-            percent: 50,
+            percent: 90,
             speed: "starting SFTP...",
           });
 
@@ -1090,7 +1090,7 @@ const EnhancedSSHManager: React.FC = () => {
                   filename: `${file.name} (SFTP...)`,
                   loaded: p.loaded || 0,
                   total: p.total || file.size,
-                  percent: 50 + Math.round(sftpPercent / 2),
+                  percent: 90 + Math.round(sftpPercent / 10),
                   speed: speedStr,
                 });
               } else if (p.status === "done") {
