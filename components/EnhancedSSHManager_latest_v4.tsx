@@ -27,6 +27,7 @@ import {
   Trash2,
   RefreshCw,
   Terminal as TerminalIcon,
+  ChevronRight,
   Lock,
   LogOut,
   Edit,
@@ -49,7 +50,6 @@ import {
   Zap,
   Shield,
   Search,
-  Archive,
 } from "lucide-react";
 
 const API_URL = "https://api.dekhai.org";
@@ -319,7 +319,7 @@ const EnhancedSSHManager: React.FC = () => {
           `${API_URL}/api/ssh/transfer-cancel?transfer_id=${encodeURIComponent(uploadTransferIdRef.current)}`,
           { method: "POST" },
         );
-      } catch (_) {}
+      } catch {}
       uploadTransferIdRef.current = null;
     }
     setTransferProgress(null);
@@ -351,8 +351,11 @@ const EnhancedSSHManager: React.FC = () => {
     if (e.ctrlKey || e.metaKey) {
       setSelectedFiles((prev) => {
         const next = new Set(prev);
-        if (next.has(item.path)) next.delete(item.path);
-        else next.add(item.path);
+        if (next.has(item.path)) {
+          next.delete(item.path);
+        } else {
+          next.add(item.path);
+        }
         return next;
       });
       lastSelectedRef.current = item.path;
@@ -425,6 +428,7 @@ const EnhancedSSHManager: React.FC = () => {
       const file = droppedFiles[i];
       const formData = new FormData();
       formData.append("file", file);
+      const startTime = Date.now();
       transferCancelledRef.current = false;
 
       try {
@@ -438,100 +442,46 @@ const EnhancedSSHManager: React.FC = () => {
           percent: 0,
           speed: "sending...",
         });
-
-        // Phase 1: XHR upload with progress (0→90%)
-        const xhrResult: any = await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          const startTime = Date.now();
-          xhr.open(
-            "POST",
-            `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-          );
-          xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-              const elapsed = (Date.now() - startTime) / 1000;
-              const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
-              const speedStr =
-                speedBps > 1024 * 1024
-                  ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-                  : `${(speedBps / 1024).toFixed(0)} KB/s`;
-              setTransferProgress({
-                active: true,
-                type: "upload",
-                filename: `${file.name} (sending...)`,
-                loaded: evt.loaded,
-                total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 90),
-                speed: speedStr,
-              });
-            }
-          };
-          xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                resolve(JSON.parse(xhr.responseText));
-              } catch (_) {
-                reject(new Error("Invalid response"));
-              }
-            } else {
-              reject(new Error(`HTTP ${xhr.status}`));
-            }
-          };
-          xhr.onerror = () => reject(new Error("Network error"));
-          xhr.send(formData);
-        });
-
-        // Phase 2: SFTP poll (90→100%)
-        const transferId = xhrResult.transfer_id;
-        uploadTransferIdRef.current = transferId;
-        if (transferId) {
-          const sftpStart = Date.now();
+        const res = await fetch(
+          `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+          { method: "POST", body: formData },
+        );
+        const data = await res.json();
+        if (data.transfer_id) {
+          uploadTransferIdRef.current = data.transfer_id;
           let done = false;
-          setTransferProgress({
-            active: true,
-            type: "upload",
-            filename: `${file.name} (SFTP...)`,
-            loaded: 0,
-            total: file.size,
-            percent: 90,
-            speed: "starting SFTP...",
-          });
           while (!done && !transferCancelledRef.current) {
             await new Promise((r) => setTimeout(r, 300));
             try {
               const pRes = await fetch(
-                `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(transferId)}`,
+                `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(data.transfer_id)}`,
               );
               const p = await pRes.json();
               if (p.status === "uploading") {
-                const elapsed = (Date.now() - sftpStart) / 1000;
-                const speedBps = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
-                const speedStr =
-                  speedBps > 1024 * 1024
-                    ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-                    : `${(speedBps / 1024).toFixed(0)} KB/s`;
+                const elapsed = (Date.now() - startTime) / 1000;
+                const speed = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
                 setTransferProgress({
                   active: true,
                   type: "upload",
-                  filename: `${file.name} (SFTP...)`,
+                  filename: file.name,
                   loaded: p.loaded || 0,
                   total: p.total || file.size,
-                  percent: 90 + Math.round((p.percent || 0) / 10),
-                  speed: speedStr,
+                  percent: p.percent || 0,
+                  speed:
+                    speed > 1048576
+                      ? `${(speed / 1048576).toFixed(1)} MB/s`
+                      : `${(speed / 1024).toFixed(0)} KB/s`,
                 });
               } else {
                 done = true;
               }
-            } catch (_) {
-              /* retry */
-            }
+            } catch {}
           }
           uploadTransferIdRef.current = null;
         }
         setTransferProgress(null);
         loadFiles();
         showAlert("Uploaded", `${file.name} (${formatBytes(file.size)})`);
-        xtermPrint(`[DROP UPLOAD] ${file.name} (${formatBytes(file.size)})`);
       } catch (err: any) {
         setTransferProgress(null);
         showAlert(
@@ -723,7 +673,7 @@ const EnhancedSSHManager: React.FC = () => {
       // cleanup old ws if any
       try {
         wsRef.current?.close();
-      } catch (_) {}
+      } catch {}
       wsRef.current = null;
 
       const ws = new WebSocket(`${wsBase}/ws/terminal/${sessionId}`);
@@ -758,7 +708,7 @@ const EnhancedSSHManager: React.FC = () => {
       cleanupFns.push(() => {
         try {
           ws.close();
-        } catch (_) {}
+        } catch {}
       });
     };
 
@@ -771,13 +721,13 @@ const EnhancedSSHManager: React.FC = () => {
       for (const fn of cleanupFns) {
         try {
           fn();
-        } catch (_) {}
+        } catch {}
       }
 
       // also null ws ref
       try {
         wsRef.current?.close();
-      } catch (_) {}
+      } catch {}
       wsRef.current = null;
     };
   }, [activeTab, sessionId, darkMode]);
@@ -788,7 +738,7 @@ const EnhancedSSHManager: React.FC = () => {
     if (saved) {
       try {
         setSavedConnections(JSON.parse(saved));
-      } catch (_) {
+      } catch {
         setSavedConnections([]);
       }
     }
@@ -881,7 +831,7 @@ const EnhancedSSHManager: React.FC = () => {
       try {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) setPinnedFolders(parsed);
-      } catch (_) {
+      } catch {
         setPinnedFolders([]);
       }
     } else {
@@ -969,10 +919,6 @@ const EnhancedSSHManager: React.FC = () => {
         const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
         if (item) copyToClipboard(item);
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard) {
-        e.preventDefault();
-        pasteClipboard();
-      }
       if (e.key === "Escape") {
         setSelectedFiles(new Set());
         setContextMenu(null);
@@ -980,14 +926,7 @@ const EnhancedSSHManager: React.FC = () => {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [
-    connected,
-    activeTab,
-    selectedFiles,
-    files,
-    filteredSortedFiles,
-    clipboard,
-  ]);
+  }, [connected, activeTab, selectedFiles, files, filteredSortedFiles]);
 
   // ===== Confirm helpers =====
   const openConfirm = (action: ConfirmAction, title: string, desc: string) => {
@@ -1195,7 +1134,7 @@ const EnhancedSSHManager: React.FC = () => {
       // close ws if open
       try {
         wsRef.current?.close();
-      } catch (_) {}
+      } catch {}
 
       showAlert("Disconnected", "Session closed.");
     } catch (err: any) {
@@ -1341,7 +1280,7 @@ const EnhancedSSHManager: React.FC = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
                 resolve(JSON.parse(xhr.responseText));
-              } catch (_) {
+              } catch {
                 reject(new Error("Invalid response"));
               }
             } else reject(new Error(`HTTP ${xhr.status}`));
@@ -1424,7 +1363,7 @@ const EnhancedSSHManager: React.FC = () => {
                 done = true;
                 setTransferProgress(null);
               }
-            } catch (_) {}
+            } catch {}
           }
         } else {
           setTransferProgress(null);
@@ -1656,103 +1595,6 @@ const EnhancedSSHManager: React.FC = () => {
     showAlert("Copied", `${item.name} is ready to paste`);
   };
 
-  // ===== Zip / Unzip =====
-  const zipItem = async (item: FileItem) => {
-    const zipName = `${item.name}.zip`;
-    try {
-      setLoading(true);
-      showAlert("Zipping", `Creating ${zipName}...`);
-      const cmd =
-        item.type === "folder"
-          ? `cd "${currentPath}" && zip -r "${zipName}" "${item.name}"`
-          : `cd "${currentPath}" && zip "${zipName}" "${item.name}"`;
-      const res = await fetch(`${API_URL}/api/ssh/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          command: cmd,
-          working_dir: currentPath,
-        }),
-      });
-      const data = await res.json();
-      loadFiles();
-      if (data.error && !data.output) {
-        showAlert("Zip failed", data.error, "destructive", 5000);
-      } else {
-        showAlert("Zipped", `${zipName} created`);
-        xtermPrint(`[ZIP] ${item.name} → ${zipName}`);
-      }
-    } catch (err: any) {
-      showAlert(
-        "Zip failed",
-        err?.message || "Unknown error",
-        "destructive",
-        5000,
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const unzipItem = async (item: FileItem) => {
-    const folderName = item.name.replace(
-      /\.(zip|tar\.gz|tgz|tar\.bz2|tar)$/i,
-      "",
-    );
-    try {
-      setLoading(true);
-      showAlert("Unzipping", `Extracting ${item.name}...`);
-      let cmd = "";
-      if (/\.zip$/i.test(item.name)) {
-        cmd = `cd "${currentPath}" && unzip -o "${item.name}" -d "${folderName}"`;
-      } else if (/\.(tar\.gz|tgz)$/i.test(item.name)) {
-        cmd = `cd "${currentPath}" && mkdir -p "${folderName}" && tar -xzf "${item.name}" -C "${folderName}"`;
-      } else if (/\.tar\.bz2$/i.test(item.name)) {
-        cmd = `cd "${currentPath}" && mkdir -p "${folderName}" && tar -xjf "${item.name}" -C "${folderName}"`;
-      } else if (/\.tar$/i.test(item.name)) {
-        cmd = `cd "${currentPath}" && mkdir -p "${folderName}" && tar -xf "${item.name}" -C "${folderName}"`;
-      } else {
-        showAlert(
-          "Unsupported",
-          "Only .zip, .tar.gz, .tgz, .tar.bz2, .tar supported",
-          "destructive",
-        );
-        setLoading(false);
-        return;
-      }
-      const res = await fetch(`${API_URL}/api/ssh/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          command: cmd,
-          working_dir: currentPath,
-        }),
-      });
-      const data = await res.json();
-      loadFiles();
-      if (data.error && !data.output) {
-        showAlert("Unzip failed", data.error, "destructive", 5000);
-      } else {
-        showAlert("Extracted", `${item.name} → ${folderName}/`);
-        xtermPrint(`[UNZIP] ${item.name} → ${folderName}/`);
-      }
-    } catch (err: any) {
-      showAlert(
-        "Unzip failed",
-        err?.message || "Unknown error",
-        "destructive",
-        5000,
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const isArchive = (name: string) =>
-    /\.(zip|tar\.gz|tgz|tar\.bz2|tar)$/i.test(name);
-
   // ===== Editor =====
   const openEditor = async (path: string) => {
     try {
@@ -1920,7 +1762,7 @@ const EnhancedSSHManager: React.FC = () => {
       for (const p of action.paths) {
         try {
           await performDelete(p);
-        } catch (_) {}
+        } catch {}
       }
       setSelectedFiles(new Set());
       loadFiles();
@@ -2461,7 +2303,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
       {/* ===== Right-Click Context Menu ===== */}
       {contextMenu && (
         <div
-          className={`fixed z-[999] min-w-[200px] py-2 rounded-xl shadow-2xl border ${
+          className={`fixed z-999 min-w-50 py-2 rounded-xl shadow-2xl border ${
             darkMode
               ? "bg-slate-800 border-slate-600"
               : "bg-white border-slate-200"
@@ -2558,31 +2400,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   <Zap size={15} className="text-amber-500" /> Pin to Tabs
                 </button>
               )}
-              <div
-                className={`my-1 border-t ${darkMode ? "border-slate-700" : "border-slate-100"}`}
-              />
-              <button
-                onClick={() => {
-                  zipItem(contextMenu.item!);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <Archive size={15} className="text-orange-500" /> Zip
-              </button>
-              {contextMenu.item.type === "file" &&
-                isArchive(contextMenu.item.name) && (
-                  <button
-                    onClick={() => {
-                      unzipItem(contextMenu.item!);
-                      setContextMenu(null);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                  >
-                    <Archive size={15} className="text-blue-500" /> Extract /
-                    Unzip
-                  </button>
-                )}
               <div
                 className={`my-1 border-t ${darkMode ? "border-slate-700" : "border-slate-100"}`}
               />
@@ -2969,7 +2786,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                 try {
                   const folder = JSON.parse(raw);
                   if (folder?.path && folder?.name) addPinnedFolder(folder);
-                } catch (_) {}
+                } catch {}
               }}
             >
               {[
@@ -3119,8 +2936,8 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   <div
                     className={`h-2.5 rounded-full transition-all duration-300 ${
                       transferProgress.type === "upload"
-                        ? "bg-gradient-to-r from-violet-500 to-purple-500"
-                        : "bg-gradient-to-r from-cyan-500 to-blue-500"
+                        ? "bg-linear-to-r from-violet-500 to-purple-500"
+                        : "bg-linear-to-r from-cyan-500 to-blue-500"
                     }`}
                     style={{ width: `${transferProgress.percent}%` }}
                   />
@@ -3153,7 +2970,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     setPinnedFolders((prev) =>
                       prev.filter((_, i) => i !== fromIndex),
                     );
-                  } catch (_) {}
+                  } catch {}
                 }}
               >
                 ❌ Drop Here To Remove
@@ -3234,11 +3051,11 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     </div>
                     <button
                       onClick={handleCreateFolder}
-                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all"
+                      className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-cyan-500 to-blue-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all"
                     >
                       <FolderPlus size={18} /> New Folder
                     </button>
-                    <label className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl cursor-pointer text-sm font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
+                    <label className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-violet-500 to-purple-500 text-white rounded-xl cursor-pointer text-sm font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
                       <Upload size={18} /> Upload
                       <input
                         type="file"
@@ -3252,7 +3069,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                       disabled={!clipboard}
                       className={`flex items-center cursor-pointer gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
                         clipboard
-                          ? "bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40"
+                          ? "bg-linear-to-r from-emerald-500 to-green-500 text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40"
                           : `${darkMode ? "bg-slate-700 text-slate-500" : "bg-slate-200 text-slate-400"} cursor-not-allowed`
                       }`}
                     >
@@ -3261,7 +3078,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     {selectedFiles.size > 1 && (
                       <button
                         onClick={handleMultiDelete}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all"
+                        className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-red-500 to-rose-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all"
                       >
                         <Trash2 size={18} /> Delete ({selectedFiles.size})
                       </button>
@@ -3306,6 +3123,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     >
                       Modified{sortArrow("modified")}
                     </button>
+                    <div className="w-32" />
                   </div>
 
                   {/* File Rows */}
@@ -3377,6 +3195,99 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                           >
                             {item.modified}
                           </span>
+
+                          <div className="w-32 flex justify-end opacity-0 group-hover:opacity-100 gap-1 transition-opacity shrink-0">
+                            {item.type === "file" && (
+                              <>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEditor(item.path);
+                                  }}
+                                  className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
+                                  title="Edit"
+                                >
+                                  <Edit
+                                    size={14}
+                                    className={themeClasses.textMuted}
+                                  />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDownload(item.path, item.name);
+                                  }}
+                                  className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
+                                  title="Download"
+                                >
+                                  <Download
+                                    size={14}
+                                    className={themeClasses.textMuted}
+                                  />
+                                </button>
+                              </>
+                            )}
+                            {item.type === "folder" && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  loadFiles(item.path);
+                                }}
+                                className={`p-1.5 rounded-lg text-cyan-500 transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
+                              >
+                                <ChevronRight size={14} />
+                              </button>
+                            )}
+                            {item.type === "file" &&
+                              item.name.endsWith(".py") && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openRunScriptModal(item.path);
+                                  }}
+                                  className={`p-1.5 rounded-lg text-emerald-500 transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
+                                  title="Run"
+                                >
+                                  <Play size={14} />
+                                </button>
+                              )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openRenameDialog(item);
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
+                              title="Rename (F2)"
+                            >
+                              <Pencil
+                                size={14}
+                                className={themeClasses.textMuted}
+                              />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyToClipboard(item);
+                              }}
+                              className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
+                              title="Copy (Ctrl+C)"
+                            >
+                              <Copy
+                                size={14}
+                                className={themeClasses.textMuted}
+                              />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDelete(item.path);
+                              }}
+                              className={`p-1.5 rounded-lg text-red-500 transition-colors ${darkMode ? "hover:bg-red-500/20" : "hover:bg-red-50"}`}
+                              title="Delete (Del)"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}
