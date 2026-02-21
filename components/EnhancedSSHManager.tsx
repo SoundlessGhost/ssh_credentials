@@ -979,7 +979,6 @@ const EnhancedSSHManager: React.FC = () => {
       const file = fileList[i];
       const formData = new FormData();
       formData.append("file", file);
-      const startTime = Date.now();
       transferCancelledRef.current = false;
 
       try {
@@ -991,31 +990,83 @@ const EnhancedSSHManager: React.FC = () => {
           loaded: 0,
           total: file.size,
           percent: 0,
-          speed: "starting...",
+          speed: "sending...",
         });
 
-        const res = await fetch(
-          `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-          { method: "POST", body: formData },
-        );
-        const data = await res.json();
+        // ===== Phase 1: Browser → API (XHR with upload progress) =====
+        const xhrResult = await new Promise<any>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
 
-        if (!data.success && !data.transfer_id) {
+          xhr.open(
+            "POST",
+            `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+          );
+
+          xhr.upload.onprogress = (evt) => {
+            if (evt.lengthComputable) {
+              const elapsed = (Date.now() - startTime) / 1000;
+              const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
+              const speedStr =
+                speedBps > 1024 * 1024
+                  ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
+                  : `${(speedBps / 1024).toFixed(0)} KB/s`;
+              setTransferProgress({
+                active: true,
+                type: "upload",
+                filename: `${file.name} (sending...)`,
+                loaded: evt.loaded,
+                total: evt.total,
+                percent: Math.round((evt.loaded / evt.total) * 50), // Phase1 = 0-50%
+                speed: speedStr,
+              });
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch {
+                reject(new Error("Invalid response"));
+              }
+            } else {
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error("Network error"));
+          xhr.send(formData);
+        });
+
+        if (!xhrResult.success && !xhrResult.transfer_id) {
           setTransferProgress(null);
           showAlert(
             "Upload failed",
-            data?.detail || "Unknown error",
+            xhrResult?.detail || "Unknown error",
             "destructive",
             5000,
           );
           continue;
         }
 
-        const transferId = data.transfer_id;
+        const transferId = xhrResult.transfer_id;
         uploadTransferIdRef.current = transferId;
 
+        // ===== Phase 2: API → Remote SFTP (poll progress) =====
         if (transferId) {
+          const sftpStart = Date.now();
           let done = false;
+
+          setTransferProgress({
+            active: true,
+            type: "upload",
+            filename: `${file.name} (SFTP...)`,
+            loaded: 0,
+            total: file.size,
+            percent: 50,
+            speed: "starting SFTP...",
+          });
+
           while (!done && !transferCancelledRef.current) {
             await new Promise((r) => setTimeout(r, 300));
             try {
@@ -1025,19 +1076,21 @@ const EnhancedSSHManager: React.FC = () => {
               const p = await pRes.json();
 
               if (p.status === "uploading") {
-                const elapsed = (Date.now() - startTime) / 1000;
+                const elapsed = (Date.now() - sftpStart) / 1000;
                 const speedBps = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
                 const speedStr =
                   speedBps > 1024 * 1024
                     ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
                     : `${(speedBps / 1024).toFixed(0)} KB/s`;
+                // Phase2 = 50-100%
+                const sftpPercent = p.percent || 0;
                 setTransferProgress({
                   active: true,
                   type: "upload",
-                  filename: file.name,
+                  filename: `${file.name} (SFTP...)`,
                   loaded: p.loaded || 0,
                   total: p.total || file.size,
-                  percent: p.percent || 0,
+                  percent: 50 + Math.round(sftpPercent / 2),
                   speed: speedStr,
                 });
               } else if (p.status === "done") {
@@ -1070,6 +1123,7 @@ const EnhancedSSHManager: React.FC = () => {
             }
           }
         } else {
+          // Old API without transfer_id
           setTransferProgress(null);
           loadFiles();
           showAlert("Uploaded", file.name);
