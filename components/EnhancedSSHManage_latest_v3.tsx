@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Input } from "@/components/ui/input";
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import {
@@ -49,10 +49,10 @@ import {
   Clock,
   Zap,
   Shield,
-  Search,
 } from "lucide-react";
 
 const API_URL = "https://api.dekhai.org";
+// const API_URL = "http://localhost:2247";
 
 // ===== All Interface =====
 interface SSHCredentials {
@@ -126,7 +126,6 @@ type ClipboardState = {
 
 type ConfirmAction =
   | { type: "delete"; path: string }
-  | { type: "multiDelete"; paths: string[] }
   | { type: "kill"; pid: number }
   | { type: "closeEditor" }
   | null;
@@ -193,30 +192,10 @@ const EnhancedSSHManager: React.FC = () => {
     percent: number;
     speed: string;
   } | null>(null);
+
   const downloadAbortRef = useRef<AbortController | null>(null);
   const uploadTransferIdRef = useRef<string | null>(null);
   const transferCancelledRef = useRef(false);
-
-  // ===== Multi-select =====
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const lastSelectedRef = useRef<string | null>(null);
-
-  // ===== Context Menu =====
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    item: FileItem | null;
-  } | null>(null);
-
-  // ===== Sort =====
-  const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-
-  // ===== Search =====
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // ===== Drag & Drop =====
-  const [dragOver, setDragOver] = useState(false);
 
   // ===== Editor =====
   const [editorContent, setEditorContent] = useState("");
@@ -327,175 +306,6 @@ const EnhancedSSHManager: React.FC = () => {
     showAlert("Cancelled", "Transfer cancelled.");
   };
 
-  // ===== Filtered + Sorted Files (memoized for performance) =====
-  const filteredSortedFiles = useMemo(() => {
-    let result = [...files];
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((f) => f.name.toLowerCase().includes(q));
-    }
-    result.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-      let cmp = 0;
-      if (sortBy === "name") cmp = a.name.localeCompare(b.name);
-      else if (sortBy === "size") cmp = (a.size || 0) - (b.size || 0);
-      else if (sortBy === "modified")
-        cmp = (a.modified || "").localeCompare(b.modified || "");
-      return sortOrder === "asc" ? cmp : -cmp;
-    });
-    return result;
-  }, [files, searchQuery, sortBy, sortOrder]);
-
-  // ===== Selection Handlers =====
-  const handleFileClick = (item: FileItem, e: React.MouseEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      setSelectedFiles((prev) => {
-        const next = new Set(prev);
-        if (next.has(item.path)) {
-          next.delete(item.path);
-        } else {
-          next.add(item.path);
-        }
-        return next;
-      });
-      lastSelectedRef.current = item.path;
-    } else if (e.shiftKey && lastSelectedRef.current) {
-      const paths = filteredSortedFiles.map((f) => f.path);
-      const lastIdx = paths.indexOf(lastSelectedRef.current);
-      const curIdx = paths.indexOf(item.path);
-      if (lastIdx >= 0 && curIdx >= 0) {
-        const start = Math.min(lastIdx, curIdx);
-        const end = Math.max(lastIdx, curIdx);
-        setSelectedFiles(new Set(paths.slice(start, end + 1)));
-      }
-    } else {
-      setSelectedFiles(new Set([item.path]));
-      lastSelectedRef.current = item.path;
-    }
-  };
-
-  // ===== Context Menu =====
-  const handleContextMenu = (e: React.MouseEvent, item: FileItem | null) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (item && !selectedFiles.has(item.path)) {
-      setSelectedFiles(new Set([item.path]));
-      lastSelectedRef.current = item.path;
-    }
-    setContextMenu({ x: e.clientX, y: e.clientY, item });
-  };
-
-  // ===== Sort Toggle =====
-  const toggleSort = (col: "name" | "size" | "modified") => {
-    if (sortBy === col)
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    else {
-      setSortBy(col);
-      setSortOrder("asc");
-    }
-  };
-
-  const sortArrow = (col: string) =>
-    sortBy === col ? (sortOrder === "asc" ? " ▲" : " ▼") : "";
-
-  // ===== Multi-delete =====
-  const handleMultiDelete = () => {
-    if (selectedFiles.size === 0) return;
-    if (selectedFiles.size === 1) {
-      handleDelete(Array.from(selectedFiles)[0]);
-    } else {
-      openConfirm(
-        { type: "multiDelete", paths: Array.from(selectedFiles) },
-        `Delete ${selectedFiles.size} items?`,
-        `This will permanently delete ${selectedFiles.size} selected items.`,
-      );
-    }
-  };
-
-  // ===== Drag & Drop Upload =====
-  const handleFileDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (
-      e.dataTransfer.types.includes("application/x-ssh-folder") ||
-      e.dataTransfer.types.includes("application/x-ssh-pinned")
-    )
-      return;
-    const droppedFiles = e.dataTransfer.files;
-    if (!droppedFiles || droppedFiles.length === 0) return;
-
-    for (let i = 0; i < droppedFiles.length; i++) {
-      const file = droppedFiles[i];
-      const formData = new FormData();
-      formData.append("file", file);
-      const startTime = Date.now();
-      transferCancelledRef.current = false;
-
-      try {
-        setLoading(true);
-        setTransferProgress({
-          active: true,
-          type: "upload",
-          filename: file.name,
-          loaded: 0,
-          total: file.size,
-          percent: 0,
-          speed: "sending...",
-        });
-        const res = await fetch(
-          `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-          { method: "POST", body: formData },
-        );
-        const data = await res.json();
-        if (data.transfer_id) {
-          uploadTransferIdRef.current = data.transfer_id;
-          let done = false;
-          while (!done && !transferCancelledRef.current) {
-            await new Promise((r) => setTimeout(r, 300));
-            try {
-              const pRes = await fetch(
-                `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(data.transfer_id)}`,
-              );
-              const p = await pRes.json();
-              if (p.status === "uploading") {
-                const elapsed = (Date.now() - startTime) / 1000;
-                const speed = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
-                setTransferProgress({
-                  active: true,
-                  type: "upload",
-                  filename: file.name,
-                  loaded: p.loaded || 0,
-                  total: p.total || file.size,
-                  percent: p.percent || 0,
-                  speed:
-                    speed > 1048576
-                      ? `${(speed / 1048576).toFixed(1)} MB/s`
-                      : `${(speed / 1024).toFixed(0)} KB/s`,
-                });
-              } else {
-                done = true;
-              }
-            } catch {}
-          }
-          uploadTransferIdRef.current = null;
-        }
-        setTransferProgress(null);
-        loadFiles();
-        showAlert("Uploaded", `${file.name} (${formatBytes(file.size)})`);
-      } catch (err: any) {
-        setTransferProgress(null);
-        showAlert(
-          "Upload failed",
-          err?.message || "Unknown error",
-          "destructive",
-          6000,
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
   const xtermPrint = (text: string) => {
     const t = xtermRef.current;
     if (!t) return;
@@ -576,9 +386,8 @@ const EnhancedSSHManager: React.FC = () => {
           try {
             const text = await navigator.clipboard.readText();
             if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(text);
               suppressInputRef.current = true;
-              wsRef.current.send(text);
+              wsRef.current.send(text.replace(/\r?\n$/, ""));
               setTimeout(() => {
                 suppressInputRef.current = false;
               }, 150);
@@ -607,13 +416,13 @@ const EnhancedSSHManager: React.FC = () => {
           if (ev.ctrlKey && !ev.shiftKey && key === "v") {
             if (pasteLockRef.current) return false; // already handled
             pasteLockRef.current = true;
+            suppressInputRef.current = true; // ← IMMEDIATELY block onData to prevent duplicates
 
             navigator.clipboard
               .readText()
               .then((text) => {
                 if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-                  suppressInputRef.current = true;
-                  wsRef.current.send(text);
+                  wsRef.current.send(text.replace(/\r?\n$/, ""));
                   setTimeout(() => {
                     suppressInputRef.current = false;
                   }, 150);
@@ -862,71 +671,6 @@ const EnhancedSSHManager: React.FC = () => {
   useEffect(() => {
     if (connected) loadFiles();
   }, [connected]);
-
-  // ===== Clear selection on path change =====
-  useEffect(() => {
-    setSelectedFiles(new Set());
-    setSearchQuery("");
-    setContextMenu(null);
-  }, [currentPath]);
-
-  // ===== Close context menu on any click =====
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("scroll", close, true);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("scroll", close, true);
-    };
-  }, [contextMenu]);
-
-  // ===== Keyboard shortcuts (Files tab) =====
-  useEffect(() => {
-    if (!connected || activeTab !== "files") return;
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      if (e.key === "Delete" && selectedFiles.size > 0) {
-        e.preventDefault();
-        if (selectedFiles.size === 1)
-          handleDelete(Array.from(selectedFiles)[0]);
-        else handleMultiDelete();
-      }
-      if (e.key === "F2" && selectedFiles.size === 1) {
-        e.preventDefault();
-        const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
-        if (item) openRenameDialog(item);
-      }
-      if (e.key === "Backspace") {
-        e.preventDefault();
-        navigateUp();
-      }
-      if (e.key === "Enter" && selectedFiles.size === 1) {
-        const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
-        if (item) {
-          if (item.type === "folder") loadFiles(item.path);
-          else openEditor(item.path);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
-        e.preventDefault();
-        setSelectedFiles(new Set(filteredSortedFiles.map((f) => f.path)));
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedFiles.size > 0) {
-        const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
-        if (item) copyToClipboard(item);
-      }
-      if (e.key === "Escape") {
-        setSelectedFiles(new Set());
-        setContextMenu(null);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [connected, activeTab, selectedFiles, files, filteredSortedFiles]);
 
   // ===== Confirm helpers =====
   const openConfirm = (action: ConfirmAction, title: string, desc: string) => {
@@ -1249,14 +993,16 @@ const EnhancedSSHManager: React.FC = () => {
           speed: "sending...",
         });
 
-        // Phase 1: Browser → API (XHR progress, 0→90%)
+        // ===== Phase 1: Browser → API (XHR with upload progress) =====
         const xhrResult = await new Promise<any>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           const startTime = Date.now();
+
           xhr.open(
             "POST",
             `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
           );
+
           xhr.upload.onprogress = (evt) => {
             if (evt.lengthComputable) {
               const elapsed = (Date.now() - startTime) / 1000;
@@ -1271,11 +1017,12 @@ const EnhancedSSHManager: React.FC = () => {
                 filename: `${file.name} (sending...)`,
                 loaded: evt.loaded,
                 total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 90),
+                percent: Math.round((evt.loaded / evt.total) * 90), // Phase1 = 0-90%
                 speed: speedStr,
               });
             }
           };
+
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
@@ -1283,7 +1030,9 @@ const EnhancedSSHManager: React.FC = () => {
               } catch {
                 reject(new Error("Invalid response"));
               }
-            } else reject(new Error(`HTTP ${xhr.status}`));
+            } else {
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
           };
           xhr.onerror = () => reject(new Error("Network error"));
           xhr.send(formData);
@@ -1300,12 +1049,14 @@ const EnhancedSSHManager: React.FC = () => {
           continue;
         }
 
-        // Phase 2: API → Remote SFTP (poll, 90→100%)
         const transferId = xhrResult.transfer_id;
         uploadTransferIdRef.current = transferId;
+
+        // ===== Phase 2: API → Remote SFTP (poll progress) =====
         if (transferId) {
           const sftpStart = Date.now();
           let done = false;
+
           setTransferProgress({
             active: true,
             type: "upload",
@@ -1315,6 +1066,7 @@ const EnhancedSSHManager: React.FC = () => {
             percent: 90,
             speed: "starting SFTP...",
           });
+
           while (!done && !transferCancelledRef.current) {
             await new Promise((r) => setTimeout(r, 300));
             try {
@@ -1322,6 +1074,7 @@ const EnhancedSSHManager: React.FC = () => {
                 `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(transferId)}`,
               );
               const p = await pRes.json();
+
               if (p.status === "uploading") {
                 const elapsed = (Date.now() - sftpStart) / 1000;
                 const speedBps = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
@@ -1329,13 +1082,15 @@ const EnhancedSSHManager: React.FC = () => {
                   speedBps > 1024 * 1024
                     ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
                     : `${(speedBps / 1024).toFixed(0)} KB/s`;
+                // Phase2 = 50-100%
+                const sftpPercent = p.percent || 0;
                 setTransferProgress({
                   active: true,
                   type: "upload",
                   filename: `${file.name} (SFTP...)`,
                   loaded: p.loaded || 0,
                   total: p.total || file.size,
-                  percent: 90 + Math.round((p.percent || 0) / 10),
+                  percent: 90 + Math.round(sftpPercent / 10),
                   speed: speedStr,
                 });
               } else if (p.status === "done") {
@@ -1363,13 +1118,17 @@ const EnhancedSSHManager: React.FC = () => {
                 done = true;
                 setTransferProgress(null);
               }
-            } catch {}
+            } catch {
+              /* retry */
+            }
           }
         } else {
+          // Old API without transfer_id
           setTransferProgress(null);
           loadFiles();
           showAlert("Uploaded", file.name);
         }
+
         uploadTransferIdRef.current = null;
       } catch (err: any) {
         setTransferProgress(null);
@@ -1391,6 +1150,7 @@ const EnhancedSSHManager: React.FC = () => {
     transferCancelledRef.current = false;
     const abortCtrl = new AbortController();
     downloadAbortRef.current = abortCtrl;
+
     try {
       const res = await fetch(
         `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`,
@@ -1400,6 +1160,7 @@ const EnhancedSSHManager: React.FC = () => {
         showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
         return;
       }
+
       const contentLength = parseInt(
         res.headers.get("Content-Length") ||
           res.headers.get("X-File-Size") ||
@@ -1407,6 +1168,7 @@ const EnhancedSSHManager: React.FC = () => {
         10,
       );
       const reader = res.body?.getReader();
+
       if (!reader) {
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
@@ -1418,6 +1180,7 @@ const EnhancedSSHManager: React.FC = () => {
         showAlert("Downloaded", filename);
         return;
       }
+
       const chunks: Uint8Array[] = [];
       let received = 0;
       while (true) {
@@ -1755,17 +1518,6 @@ const EnhancedSSHManager: React.FC = () => {
 
     if (action.type === "delete") {
       await performDelete(action.path);
-      setSelectedFiles(new Set());
-      return;
-    }
-    if (action.type === "multiDelete") {
-      for (const p of action.paths) {
-        try {
-          await performDelete(p);
-        } catch {}
-      }
-      setSelectedFiles(new Set());
-      loadFiles();
       return;
     }
     if (action.type === "kill") {
@@ -2300,158 +2052,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ===== Right-Click Context Menu ===== */}
-      {contextMenu && (
-        <div
-          className={`fixed z-999 min-w-50 py-2 rounded-xl shadow-2xl border ${
-            darkMode
-              ? "bg-slate-800 border-slate-600"
-              : "bg-white border-slate-200"
-          }`}
-          style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 220),
-            top: Math.min(contextMenu.y, window.innerHeight - 400),
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {contextMenu.item ? (
-            <>
-              {contextMenu.item.type === "folder" && (
-                <button
-                  onClick={() => {
-                    loadFiles(contextMenu.item!.path);
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Folder size={15} className="text-cyan-500" /> Open
-                </button>
-              )}
-              {contextMenu.item.type === "file" && (
-                <button
-                  onClick={() => {
-                    openEditor(contextMenu.item!.path);
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Edit size={15} className="text-cyan-500" /> Edit
-                </button>
-              )}
-              {contextMenu.item.type === "file" && (
-                <button
-                  onClick={() => {
-                    handleDownload(
-                      contextMenu.item!.path,
-                      contextMenu.item!.name,
-                    );
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Download size={15} className="text-cyan-500" /> Download
-                </button>
-              )}
-              {contextMenu.item.type === "file" &&
-                contextMenu.item.name.endsWith(".py") && (
-                  <button
-                    onClick={() => {
-                      openRunScriptModal(contextMenu.item!.path);
-                      setContextMenu(null);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                  >
-                    <Play size={15} className="text-emerald-500" /> Run Script
-                  </button>
-                )}
-              <div
-                className={`my-1 border-t ${darkMode ? "border-slate-700" : "border-slate-100"}`}
-              />
-              <button
-                onClick={() => {
-                  copyToClipboard(contextMenu.item!);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <Copy size={15} /> Copy
-              </button>
-              <button
-                onClick={() => {
-                  openRenameDialog(contextMenu.item!);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <Pencil size={15} /> Rename
-              </button>
-              {contextMenu.item.type === "folder" && (
-                <button
-                  onClick={() => {
-                    addPinnedFolder({
-                      name: contextMenu.item!.name,
-                      path: contextMenu.item!.path,
-                    });
-                    setContextMenu(null);
-                    showAlert("Pinned", contextMenu.item!.name);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Zap size={15} className="text-amber-500" /> Pin to Tabs
-                </button>
-              )}
-              <div
-                className={`my-1 border-t ${darkMode ? "border-slate-700" : "border-slate-100"}`}
-              />
-              <button
-                onClick={() => {
-                  if (selectedFiles.size > 1) handleMultiDelete();
-                  else handleDelete(contextMenu.item!.path);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-red-500 ${darkMode ? "hover:bg-red-500/20" : "hover:bg-red-50"}`}
-              >
-                <Trash2 size={15} /> Delete
-                {selectedFiles.size > 1 ? ` (${selectedFiles.size})` : ""}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  handleCreateFolder();
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <FolderPlus size={15} className="text-cyan-500" /> New Folder
-              </button>
-              {clipboard && (
-                <button
-                  onClick={() => {
-                    pasteClipboard();
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <ClipboardPaste size={15} className="text-emerald-500" />{" "}
-                  Paste
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  loadFiles();
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <RefreshCw size={15} /> Refresh
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
       {!connected ? (
         /* ===== LOGIN PAGE ===== */
         <div
@@ -2475,7 +2075,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
           </button>
 
           <div
-            className={`${themeClasses.card} border rounded-3xl shadow-2xl p-8 w-full max-w-lg relative z-10`}
+            className={`${themeClasses.card} border rounded-3xl shadow-2xl p-8 w-full max-w-4xl relative z-10`}
           >
             {/* Logo */}
             <div className="flex items-center justify-center mb-6">
@@ -2493,7 +2093,8 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               SSH Server Manager
             </h1>
             <p className={`text-center mb-8 ${themeClasses.textMuted}`}>
-              Secure connection to your Linux servers
+              🙃 Secure connection to your Linux servers Design by S!lent Ghost
+              🙂
             </p>
 
             {/* Saved Connections */}
@@ -2505,7 +2106,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   <Shield size={14} />
                   Saved Connections
                 </h3>
-                <div className="grid grid-cols-2 gap-3 max-h-64">
+                <div className="grid grid-cols-3 gap-3 max-h-64 overflow-y-auto pr-4">
                   {savedConnections.map((conn) => (
                     <div
                       key={conn.id}
@@ -2980,83 +2581,36 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
             {/* ===== FILES TAB ===== */}
             {activeTab === "files" && (
               <div
-                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border relative`}
-                onDragOver={(e) => {
-                  if (
-                    e.dataTransfer.types.includes("application/x-ssh-folder") ||
-                    e.dataTransfer.types.includes("application/x-ssh-pinned")
-                  )
-                    return;
-                  e.preventDefault();
-                  setDragOver(true);
-                }}
-                onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                  setDragOver(false);
-                }}
-                onDrop={handleFileDrop}
-                onContextMenu={(e) => {
-                  const target = e.target as HTMLElement;
-                  if (!target.closest("[data-file-row]"))
-                    handleContextMenu(e, null);
-                }}
+                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
               >
-                {/* Drag & Drop Overlay */}
-                {dragOver && (
-                  <div className="absolute inset-0 z-50 bg-cyan-500/10 border-2 border-dashed border-cyan-500 rounded-2xl flex items-center justify-center pointer-events-none">
-                    <div className="text-center">
-                      <Upload
-                        size={48}
-                        className="mx-auto mb-2 text-cyan-500"
-                      />
-                      <p
-                        className={`text-lg font-semibold ${themeClasses.text}`}
-                      >
-                        Drop files here to upload
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Toolbar */}
-                <div className="flex justify-between items-center mb-4 gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={navigateUp}
-                      className={`p-2 rounded-xl transition-all ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
-                      title="Go up (Backspace)"
+                      className={`p-2 rounded-xl transition-all ${
+                        darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"
+                      }`}
+                      title="Go up"
                     >
                       ↑
                     </button>
                     <span
-                      className={`font-mono text-sm ${themeClasses.textMuted} truncate`}
+                      className={`font-mono text-sm ${themeClasses.textMuted}`}
                     >
                       {currentPath}
                     </span>
                   </div>
-                  <div className="flex gap-2 items-center shrink-0">
-                    {/* Search Box */}
-                    <div className="relative">
-                      <Search
-                        size={14}
-                        className={`absolute left-3 top-1/2 -translate-y-1/2 ${themeClasses.textMuted}`}
-                      />
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Filter files..."
-                        className={`pl-8 pr-3 py-2 text-sm border rounded-xl w-44 transition-all focus:w-56 ${themeClasses.input}`}
-                      />
-                    </div>
+                  <div className="flex gap-2">
                     <button
                       onClick={handleCreateFolder}
                       className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-cyan-500 to-blue-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all"
                     >
-                      <FolderPlus size={18} /> New Folder
+                      <FolderPlus size={18} />
+                      New Folder
                     </button>
                     <label className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-violet-500 to-purple-500 text-white rounded-xl cursor-pointer text-sm font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
-                      <Upload size={18} /> Upload
+                      <Upload size={18} />
+                      Upload
                       <input
                         type="file"
                         multiple
@@ -3073,258 +2627,188 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                           : `${darkMode ? "bg-slate-700 text-slate-500" : "bg-slate-200 text-slate-400"} cursor-not-allowed`
                       }`}
                     >
-                      <ClipboardPaste size={18} /> Paste
+                      <ClipboardPaste size={18} />
+                      Paste
                     </button>
-                    {selectedFiles.size > 1 && (
-                      <button
-                        onClick={handleMultiDelete}
-                        className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-red-500 to-rose-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all"
-                      >
-                        <Trash2 size={18} /> Delete ({selectedFiles.size})
-                      </button>
-                    )}
+
                     <button
                       onClick={() => loadFiles()}
-                      className={`p-2 border rounded-xl transition-all ${darkMode ? "border-slate-600 hover:bg-slate-700" : "border-slate-200 hover:bg-slate-50"}`}
+                      className={`p-2 border rounded-xl transition-all ${
+                        darkMode
+                          ? "border-slate-600 hover:bg-slate-700"
+                          : "border-slate-200 hover:bg-slate-50"
+                      }`}
                     >
                       <RefreshCw size={18} className={themeClasses.textMuted} />
                     </button>
                   </div>
                 </div>
 
-                {/* File List */}
                 <div
-                  className={`border rounded-xl overflow-hidden ${darkMode ? "border-slate-700" : "border-slate-200"}`}
+                  className={`border rounded-xl overflow-hidden max-h-96 overflow-y-auto ${
+                    darkMode ? "border-slate-700" : "border-slate-200"
+                  }`}
                 >
-                  {/* Column Headers (Sortable) */}
-                  <div
-                    className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold select-none border-b ${
-                      darkMode
-                        ? "bg-slate-700/50 border-slate-700 text-slate-400"
-                        : "bg-slate-50 border-slate-200 text-slate-500"
-                    }`}
-                  >
-                    <div className="w-6" />
-                    <button
-                      onClick={() => toggleSort("name")}
-                      className="flex-1 text-left hover:text-cyan-500 transition-colors cursor-pointer"
+                  {files.length === 0 ? (
+                    <div
+                      className={`p-8 text-center ${themeClasses.textMuted}`}
                     >
-                      Name{sortArrow("name")}
-                    </button>
-                    <button
-                      onClick={() => toggleSort("size")}
-                      className="w-24 text-right hover:text-cyan-500 transition-colors cursor-pointer"
-                    >
-                      Size{sortArrow("size")}
-                    </button>
-                    <button
-                      onClick={() => toggleSort("modified")}
-                      className="w-44 text-right hover:text-cyan-500 transition-colors cursor-pointer"
-                    >
-                      Modified{sortArrow("modified")}
-                    </button>
-                    <div className="w-32" />
-                  </div>
-
-                  {/* File Rows */}
-                  <div className="max-h-96 overflow-y-auto">
-                    {filteredSortedFiles.length === 0 ? (
+                      No files found
+                    </div>
+                  ) : (
+                    files.map((item) => (
                       <div
-                        className={`p-8 text-center ${themeClasses.textMuted}`}
+                        key={item.path}
+                        onDoubleClick={() => {
+                          if (item.type === "folder") loadFiles(item.path);
+                          else openEditor(item.path);
+                        }}
+                        className={`flex items-center gap-2 p-3 cursor-pointer group transition-colors ${
+                          darkMode
+                            ? "hover:bg-slate-700/50"
+                            : "hover:bg-slate-50"
+                        }`}
+                        draggable={item.type === "folder"}
+                        onDragStart={(e) => {
+                          if (item.type !== "folder") return;
+                          e.dataTransfer.setData(
+                            "application/x-ssh-folder",
+                            JSON.stringify({
+                              name: item.name,
+                              path: item.path,
+                            }),
+                          );
+                          e.dataTransfer.effectAllowed = "copy";
+                        }}
                       >
-                        {searchQuery ? "No matching files" : "No files found"}
-                      </div>
-                    ) : (
-                      filteredSortedFiles.map((item) => (
-                        <div
-                          key={item.path}
-                          data-file-row
-                          onClick={(e) => handleFileClick(item, e)}
-                          onDoubleClick={() => {
-                            if (item.type === "folder") loadFiles(item.path);
-                            else openEditor(item.path);
-                          }}
-                          onContextMenu={(e) => handleContextMenu(e, item)}
-                          className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${
-                            selectedFiles.has(item.path)
-                              ? darkMode
-                                ? "bg-cyan-500/15 border-l-2 border-l-cyan-500"
-                                : "bg-cyan-50 border-l-2 border-l-cyan-500"
-                              : darkMode
-                                ? "hover:bg-slate-700/50 border-l-2 border-l-transparent"
-                                : "hover:bg-slate-50 border-l-2 border-l-transparent"
-                          }`}
-                          draggable={item.type === "folder"}
-                          onDragStart={(e) => {
-                            if (item.type !== "folder") return;
-                            e.dataTransfer.setData(
-                              "application/x-ssh-folder",
-                              JSON.stringify({
-                                name: item.name,
-                                path: item.path,
-                              }),
-                            );
-                            e.dataTransfer.effectAllowed = "copy";
-                          }}
-                        >
-                          {item.type === "folder" ? (
-                            <Folder
-                              size={18}
-                              className="text-cyan-500 shrink-0"
-                            />
-                          ) : (
-                            <File
-                              size={18}
-                              className={`${themeClasses.textMuted} shrink-0`}
-                            />
+                        {item.type === "folder" ? (
+                          <Folder size={18} className="text-cyan-500" />
+                        ) : (
+                          <File size={18} className={themeClasses.textMuted} />
+                        )}
+
+                        <span className={`flex-1 text-sm ${themeClasses.text}`}>
+                          {item.name}
+                        </span>
+
+                        <span className={`text-xs ${themeClasses.textMuted}`}>
+                          {item.sizeStr}
+                        </span>
+                        <span className={`text-xs ${themeClasses.textMuted}`}>
+                          {item.modified}
+                        </span>
+
+                        <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                          {item.type === "file" && (
+                            <>
+                              <button
+                                onClick={() => openEditor(item.path)}
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  darkMode
+                                    ? "hover:bg-slate-600"
+                                    : "hover:bg-slate-200"
+                                }`}
+                                title="Edit"
+                              >
+                                <Edit
+                                  size={14}
+                                  className={themeClasses.textMuted}
+                                />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  handleDownload(item.path, item.name)
+                                }
+                                title="Download"
+                                className={`p-1.5 rounded-lg transition-colors ${
+                                  darkMode
+                                    ? "hover:bg-slate-600"
+                                    : "hover:bg-slate-200"
+                                }`}
+                              >
+                                <Download
+                                  size={14}
+                                  className={themeClasses.textMuted}
+                                />
+                              </button>
+                            </>
                           )}
 
-                          <span
-                            className={`flex-1 text-sm truncate ${themeClasses.text}`}
-                          >
-                            {item.name}
-                          </span>
+                          {item.type === "folder" && (
+                            <button
+                              onClick={() => loadFiles(item.path)}
+                              className={`p-1.5 rounded-lg text-cyan-500 transition-colors ${
+                                darkMode
+                                  ? "hover:bg-slate-600"
+                                  : "hover:bg-slate-200"
+                              }`}
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          )}
 
-                          <span
-                            className={`text-xs w-24 text-right shrink-0 ${themeClasses.textMuted}`}
-                          >
-                            {item.sizeStr}
-                          </span>
-                          <span
-                            className={`text-xs w-44 text-right shrink-0 ${themeClasses.textMuted}`}
-                          >
-                            {item.modified}
-                          </span>
+                          {item.type === "file" && item.name.endsWith(".py") ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openRunScriptModal(item.path);
+                              }}
+                              className={`p-1.5 rounded-lg text-emerald-500 transition-colors ${
+                                darkMode
+                                  ? "hover:bg-slate-600"
+                                  : "hover:bg-slate-200"
+                              }`}
+                              title="Run"
+                            >
+                              <Play size={14} />
+                            </button>
+                          ) : null}
 
-                          <div className="w-32 flex justify-end opacity-0 group-hover:opacity-100 gap-1 transition-opacity shrink-0">
-                            {item.type === "file" && (
-                              <>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEditor(item.path);
-                                  }}
-                                  className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                                  title="Edit"
-                                >
-                                  <Edit
-                                    size={14}
-                                    className={themeClasses.textMuted}
-                                  />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownload(item.path, item.name);
-                                  }}
-                                  className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                                  title="Download"
-                                >
-                                  <Download
-                                    size={14}
-                                    className={themeClasses.textMuted}
-                                  />
-                                </button>
-                              </>
-                            )}
-                            {item.type === "folder" && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  loadFiles(item.path);
-                                }}
-                                className={`p-1.5 rounded-lg text-cyan-500 transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                              >
-                                <ChevronRight size={14} />
-                              </button>
-                            )}
-                            {item.type === "file" &&
-                              item.name.endsWith(".py") && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openRunScriptModal(item.path);
-                                  }}
-                                  className={`p-1.5 rounded-lg text-emerald-500 transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                                  title="Run"
-                                >
-                                  <Play size={14} />
-                                </button>
-                              )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRenameDialog(item);
-                              }}
-                              className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                              title="Rename (F2)"
-                            >
-                              <Pencil
-                                size={14}
-                                className={themeClasses.textMuted}
-                              />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyToClipboard(item);
-                              }}
-                              className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                              title="Copy (Ctrl+C)"
-                            >
-                              <Copy
-                                size={14}
-                                className={themeClasses.textMuted}
-                              />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(item.path);
-                              }}
-                              className={`p-1.5 rounded-lg text-red-500 transition-colors ${darkMode ? "hover:bg-red-500/20" : "hover:bg-red-50"}`}
-                              title="Delete (Del)"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => openRenameDialog(item)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              darkMode
+                                ? "hover:bg-slate-600"
+                                : "hover:bg-slate-200"
+                            }`}
+                            title="Rename"
+                          >
+                            <Pencil
+                              size={14}
+                              className={themeClasses.textMuted}
+                            />
+                          </button>
+
+                          <button
+                            onClick={() => copyToClipboard(item)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              darkMode
+                                ? "hover:bg-slate-600"
+                                : "hover:bg-slate-200"
+                            }`}
+                            title="Copy"
+                          >
+                            <Copy
+                              size={14}
+                              className={themeClasses.textMuted}
+                            />
+                          </button>
+
+                          <button
+                            onClick={() => handleDelete(item.path)}
+                            className={`p-1.5 rounded-lg text-red-500 transition-colors ${
+                              darkMode
+                                ? "hover:bg-red-500/20"
+                                : "hover:bg-red-50"
+                            }`}
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Status Bar */}
-                <div
-                  className={`flex items-center justify-between mt-3 px-1 text-xs ${themeClasses.textMuted}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <span>
-                      {filteredSortedFiles.length} items
-                      {searchQuery ? ` (filtered from ${files.length})` : ""}
-                    </span>
-                    {selectedFiles.size > 0 && (
-                      <span className="text-cyan-500 font-medium">
-                        {selectedFiles.size} selected
-                      </span>
-                    )}
-                    {selectedFiles.size > 0 && (
-                      <span>
-                        {formatBytes(
-                          files
-                            .filter((f) => selectedFiles.has(f.path))
-                            .reduce((sum, f) => sum + (f.size || 0), 0),
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 opacity-60">
-                    <span>Ctrl+A: Select All</span>
-                    <span>Del: Delete</span>
-                    <span>F2: Rename</span>
-                    <span>Right-click: Menu</span>
-                    <span>Drop files to upload</span>
-                  </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
