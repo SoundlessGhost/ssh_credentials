@@ -193,6 +193,10 @@ const EnhancedSSHManager: React.FC = () => {
     speed: string;
   } | null>(null);
 
+  const downloadAbortRef = useRef<AbortController | null>(null);
+  const uploadTransferIdRef = useRef<string | null>(null);
+  const transferCancelledRef = useRef(false);
+
   // ===== Editor =====
   const [editorContent, setEditorContent] = useState("");
   const [editorFile, setEditorFile] = useState<string>("");
@@ -280,6 +284,26 @@ const EnhancedSSHManager: React.FC = () => {
     if (bytes < 1024 * 1024 * 1024)
       return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+  };
+
+  const cancelTransfer = async () => {
+    transferCancelledRef.current = true;
+    if (downloadAbortRef.current) {
+      downloadAbortRef.current.abort();
+      downloadAbortRef.current = null;
+    }
+    if (uploadTransferIdRef.current) {
+      try {
+        await fetch(
+          `${API_URL}/api/ssh/transfer-cancel?transfer_id=${encodeURIComponent(uploadTransferIdRef.current)}`,
+          { method: "POST" },
+        );
+      } catch {}
+      uploadTransferIdRef.current = null;
+    }
+    setTransferProgress(null);
+    setLoading(false);
+    showAlert("Cancelled", "Transfer cancelled.");
   };
 
   const xtermPrint = (text: string) => {
@@ -956,78 +980,102 @@ const EnhancedSSHManager: React.FC = () => {
       const formData = new FormData();
       formData.append("file", file);
       const startTime = Date.now();
+      transferCancelledRef.current = false;
 
       try {
         setLoading(true);
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open(
-            "POST",
-            `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+        setTransferProgress({
+          active: true,
+          type: "upload",
+          filename: file.name,
+          loaded: 0,
+          total: file.size,
+          percent: 0,
+          speed: "starting...",
+        });
+
+        const res = await fetch(
+          `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
+          { method: "POST", body: formData },
+        );
+        const data = await res.json();
+
+        if (!data.success && !data.transfer_id) {
+          setTransferProgress(null);
+          showAlert(
+            "Upload failed",
+            data?.detail || "Unknown error",
+            "destructive",
+            5000,
           );
+          continue;
+        }
 
-          xhr.upload.onprogress = (evt) => {
-            if (evt.lengthComputable) {
-              const elapsed = (Date.now() - startTime) / 1000;
-              const speedBps = elapsed > 0 ? evt.loaded / elapsed : 0;
-              const speedStr =
-                speedBps > 1024 * 1024
-                  ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
-                  : `${(speedBps / 1024).toFixed(0)} KB/s`;
-              setTransferProgress({
-                active: true,
-                type: "upload",
-                filename: file.name,
-                loaded: evt.loaded,
-                total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 100),
-                speed: speedStr,
-              });
-            }
-          };
+        const transferId = data.transfer_id;
+        uploadTransferIdRef.current = transferId;
 
-          xhr.onload = () => {
-            setTransferProgress(null);
-            if (xhr.status >= 200 && xhr.status < 300) {
-              try {
-                const data = JSON.parse(xhr.responseText);
-                if (data.success) {
-                  loadFiles();
-                  showAlert(
-                    "Uploaded",
-                    `${file.name} (${formatBytes(file.size)})`,
-                  );
-                  xtermPrint(
-                    `[UPLOAD] ${file.name} (${formatBytes(file.size)})`,
-                  );
-                } else {
-                  showAlert(
-                    "Upload failed",
-                    data?.detail || "Unknown error",
-                    "destructive",
-                    5000,
-                  );
-                }
-              } catch {
+        if (transferId) {
+          let done = false;
+          while (!done && !transferCancelledRef.current) {
+            await new Promise((r) => setTimeout(r, 300));
+            try {
+              const pRes = await fetch(
+                `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(transferId)}`,
+              );
+              const p = await pRes.json();
+
+              if (p.status === "uploading") {
+                const elapsed = (Date.now() - startTime) / 1000;
+                const speedBps = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
+                const speedStr =
+                  speedBps > 1024 * 1024
+                    ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
+                    : `${(speedBps / 1024).toFixed(0)} KB/s`;
+                setTransferProgress({
+                  active: true,
+                  type: "upload",
+                  filename: file.name,
+                  loaded: p.loaded || 0,
+                  total: p.total || file.size,
+                  percent: p.percent || 0,
+                  speed: speedStr,
+                });
+              } else if (p.status === "done") {
+                done = true;
+                setTransferProgress(null);
+                loadFiles();
+                showAlert(
+                  "Uploaded",
+                  `${file.name} (${formatBytes(file.size)})`,
+                );
+                xtermPrint(`[UPLOAD] ${file.name} (${formatBytes(file.size)})`);
+              } else if (p.status === "error") {
+                done = true;
+                setTransferProgress(null);
                 showAlert(
                   "Upload failed",
-                  "Invalid response",
+                  p.error || "SFTP error",
                   "destructive",
                   5000,
                 );
+              } else if (
+                p.status === "not_found" ||
+                p.status === "cancelling"
+              ) {
+                done = true;
+                setTransferProgress(null);
               }
-              resolve();
-            } else {
-              reject(new Error(`HTTP ${xhr.status}`));
+            } catch {
+              /* retry */
             }
-          };
+          }
+        } else {
+          setTransferProgress(null);
+          loadFiles();
+          showAlert("Uploaded", file.name);
+        }
 
-          xhr.onerror = () => {
-            setTransferProgress(null);
-            reject(new Error("Network error"));
-          };
-          xhr.send(formData);
-        });
+        uploadTransferIdRef.current = null;
       } catch (err: any) {
         setTransferProgress(null);
         showAlert(
@@ -1045,9 +1093,14 @@ const EnhancedSSHManager: React.FC = () => {
 
   const handleDownload = async (path: string, filename: string) => {
     const startTime = Date.now();
+    transferCancelledRef.current = false;
+    const abortCtrl = new AbortController();
+    downloadAbortRef.current = abortCtrl;
+
     try {
       const res = await fetch(
         `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`,
+        { signal: abortCtrl.signal },
       );
       if (!res.ok) {
         showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
@@ -1100,6 +1153,7 @@ const EnhancedSSHManager: React.FC = () => {
         }
       }
       setTransferProgress(null);
+      downloadAbortRef.current = null;
       const blob = new Blob(chunks as BlobPart[]);
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1110,7 +1164,9 @@ const EnhancedSSHManager: React.FC = () => {
       showAlert("Downloaded", `${filename} (${formatBytes(received)})`);
       xtermPrint(`[DOWNLOAD] ${filename} (${formatBytes(received)})`);
     } catch (err: any) {
+      downloadAbortRef.current = null;
       setTransferProgress(null);
+      if (err?.name === "AbortError") return;
       showAlert(
         "Download failed",
         err?.message || "Unknown error",
@@ -2412,6 +2468,13 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                     >
                       {transferProgress.percent}%
                     </span>
+                    <button
+                      onClick={cancelTransfer}
+                      className="p-1.5 rounded-lg text-red-500 hover:bg-red-500/20 transition-colors"
+                      title="Cancel transfer"
+                    >
+                      <X size={16} />
+                    </button>
                   </div>
                 </div>
                 <div
