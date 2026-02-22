@@ -27,7 +27,6 @@ import {
   Trash2,
   RefreshCw,
   Terminal as TerminalIcon,
-  ChevronRight,
   Lock,
   LogOut,
   Edit,
@@ -49,6 +48,15 @@ import {
   Clock,
   Zap,
   Shield,
+  Search,
+  Scissors,
+  Package,
+  PackageOpen,
+  Pin,
+  FolderOpen,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 const API_URL = "https://api.dekhai.org";
@@ -131,6 +139,22 @@ type ConfirmAction =
   | null;
 
 type PinnedFolder = { name: string; path: string };
+
+type SortField = "name" | "size" | "modified" | "type";
+type SortOrder = "asc" | "desc";
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+  items: {
+    label: string;
+    icon: any;
+    action: () => void;
+    danger?: boolean;
+    disabled?: boolean;
+    divider?: boolean;
+  }[];
+} | null;
 
 const EnhancedSSHManager: React.FC = () => {
   // ===== Dark Mode =====
@@ -223,6 +247,23 @@ const EnhancedSSHManager: React.FC = () => {
 
   // ===== Script Run Modal =====
   const [runOut, setRunOut] = useState("");
+
+  // ===== Multi-select =====
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const lastClickedIndexRef = useRef<number | null>(null);
+
+  // ===== Context Menu =====
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+
+  // ===== Sort =====
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  // ===== Search/Filter =====
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // ===== Drag & Drop Upload =====
+  const [dragOverUpload, setDragOverUpload] = useState(false);
   const [runInput, setRunInput] = useState("");
   const [runTimeout, setRunTimeout] = useState(60);
   const [runServers, setRunServers] = useState("");
@@ -904,6 +945,9 @@ const EnhancedSSHManager: React.FC = () => {
       if (data.success) {
         setFiles(data.items);
         setCurrentPath(data.path);
+        setSelectedFiles(new Set());
+        lastClickedIndexRef.current = null;
+        setSearchQuery("");
       }
     } catch (err: any) {
       showAlert(
@@ -971,10 +1015,8 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
+  // ===== Reusable upload function (used by both button + drag&drop) =====
+  const uploadFiles = async (fileList: File[]) => {
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
       const formData = new FormData();
@@ -1017,7 +1059,7 @@ const EnhancedSSHManager: React.FC = () => {
                 filename: `${file.name} (sending...)`,
                 loaded: evt.loaded,
                 total: evt.total,
-                percent: Math.round((evt.loaded / evt.total) * 90), // Phase1 = 0-90%
+                percent: Math.round((evt.loaded / evt.total) * 90),
                 speed: speedStr,
               });
             }
@@ -1082,7 +1124,6 @@ const EnhancedSSHManager: React.FC = () => {
                   speedBps > 1024 * 1024
                     ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
                     : `${(speedBps / 1024).toFixed(0)} KB/s`;
-                // Phase2 = 50-100%
                 const sftpPercent = p.percent || 0;
                 setTransferProgress({
                   active: true,
@@ -1123,7 +1164,6 @@ const EnhancedSSHManager: React.FC = () => {
             }
           }
         } else {
-          // Old API without transfer_id
           setTransferProgress(null);
           loadFiles();
           showAlert("Uploaded", file.name);
@@ -1142,7 +1182,25 @@ const EnhancedSSHManager: React.FC = () => {
         setLoading(false);
       }
     }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await uploadFiles(Array.from(fileList));
     e.target.value = "";
+  };
+
+  // ===== Drag & Drop Upload =====
+  const handleDragDropUpload = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverUpload(false);
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) return;
+    // Filter out folders (folders have size 0 and no type typically, but best effort)
+    const files = Array.from(droppedFiles).filter((f) => f.size > 0 || f.type);
+    if (files.length === 0) return;
+    await uploadFiles(files);
   };
 
   const handleDownload = async (path: string, filename: string) => {
@@ -1309,42 +1367,6 @@ const EnhancedSSHManager: React.FC = () => {
       }
     } catch (e) {
       showAlert("Rename failed", String(e), "destructive");
-    }
-  };
-
-  // ===== Clipboard =====
-  const pasteClipboard = async () => {
-    if (!clipboard) return;
-
-    const baseName = clipboard.name;
-    const destPath = `${currentPath}/${baseName}-copy`.replace("//", "/");
-
-    try {
-      const res = await fetch(`${API_URL}/api/ssh/cp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          src_path: clipboard.srcPath,
-          dest_path: destPath,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        showAlert("Pasted", `${baseName} copied here`);
-        loadFiles();
-        setClipboard(null);
-        xtermPrint(`[COPY] ${clipboard.srcPath} -> ${destPath}`);
-      } else {
-        showAlert(
-          "Paste failed",
-          data?.detail || "Unknown error",
-          "destructive",
-        );
-      }
-    } catch (e) {
-      showAlert("Paste failed", String(e), "destructive");
     }
   };
 
@@ -1517,7 +1539,12 @@ const EnhancedSSHManager: React.FC = () => {
     if (!action) return;
 
     if (action.type === "delete") {
-      await performDelete(action.path);
+      if (action.path.includes("|MULTI|")) {
+        const paths = action.path.split("|MULTI|");
+        await performMultiDelete(paths);
+      } else {
+        await performDelete(action.path);
+      }
       return;
     }
     if (action.type === "kill") {
@@ -1639,6 +1666,565 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
         6000,
       );
     }
+  };
+
+  // ===== Multi-Select Handler =====
+  const handleFileClick = (
+    e: React.MouseEvent,
+    item: FileItem,
+    index: number,
+  ) => {
+    // Don't handle if it was a context menu click
+    if (e.button === 2) return;
+
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Click: toggle individual selection
+      setSelectedFiles((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.path)) next.delete(item.path);
+        else next.add(item.path);
+        return next;
+      });
+      lastClickedIndexRef.current = index;
+    } else if (e.shiftKey && lastClickedIndexRef.current !== null) {
+      // Shift+Click: range select
+      const start = Math.min(lastClickedIndexRef.current, index);
+      const end = Math.max(lastClickedIndexRef.current, index);
+      const newSelected = new Set(selectedFiles);
+      for (let i = start; i <= end; i++) {
+        if (sortedFilteredFiles[i])
+          newSelected.add(sortedFilteredFiles[i].path);
+      }
+      setSelectedFiles(newSelected);
+    } else {
+      // Normal click: select only this one
+      setSelectedFiles(new Set([item.path]));
+      lastClickedIndexRef.current = index;
+    }
+  };
+
+  // ===== Context Menu =====
+  const handleContextMenu = (e: React.MouseEvent, item?: FileItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // If right-clicked on unselected item, select it
+    if (item && !selectedFiles.has(item.path)) {
+      setSelectedFiles(new Set([item.path]));
+    }
+
+    const selCount = item
+      ? Math.max(1, selectedFiles.size)
+      : selectedFiles.size;
+    const isZip =
+      item?.name?.endsWith(".zip") ||
+      item?.name?.endsWith(".tar.gz") ||
+      item?.name?.endsWith(".gz");
+    const menuItems: ContextMenuState extends null
+      ? never
+      : NonNullable<ContextMenuState>["items"] = [];
+
+    if (!item) {
+      // Clicked on empty space
+      menuItems.push(
+        {
+          label: "Paste",
+          icon: ClipboardPaste,
+          action: () => pasteClipboard(),
+          disabled: !clipboard,
+        },
+        {
+          label: "New Folder",
+          icon: FolderPlus,
+          action: () => handleCreateFolder(),
+        },
+        {
+          label: "Upload",
+          icon: Upload,
+          action: () => document.getElementById("file-upload-input")?.click(),
+        },
+        { label: "Refresh", icon: RefreshCw, action: () => loadFiles() },
+      );
+    } else if (selCount > 1) {
+      // Multi-select context menu
+      const selectedPaths = Array.from(selectedFiles);
+      menuItems.push(
+        {
+          label: `Copy (${selCount})`,
+          icon: Copy,
+          action: () => {
+            setClipboard({
+              action: "copy",
+              srcPath: selectedPaths[0],
+              name: `${selCount} items`,
+              type: "file",
+            });
+            showAlert("Copied", `${selCount} items ready to paste`);
+          },
+        },
+        {
+          label: `Zip (${selCount})`,
+          icon: Package,
+          action: () => handleZip(selectedPaths),
+        },
+        {
+          label: `Delete (${selCount})`,
+          icon: Trash2,
+          action: () => {
+            openConfirm(
+              { type: "delete", path: selectedPaths.join("|MULTI|") },
+              "Delete multiple items?",
+              `Permanently delete ${selCount} selected items?`,
+            );
+          },
+          danger: true,
+        },
+      );
+    } else if (item.type === "folder") {
+      menuItems.push(
+        { label: "Open", icon: FolderOpen, action: () => loadFiles(item.path) },
+        { label: "Copy", icon: Copy, action: () => copyToClipboard(item) },
+        {
+          label: "Cut",
+          icon: Scissors,
+          action: () => {
+            setClipboard({
+              action: "cut",
+              srcPath: item.path,
+              name: item.name,
+              type: "folder",
+            });
+            showAlert("Cut", `${item.name} ready to move`);
+          },
+        },
+        { label: "Rename", icon: Pencil, action: () => openRenameDialog(item) },
+        { label: "Zip", icon: Package, action: () => handleZip([item.path]) },
+        {
+          label: "Pin to tabs",
+          icon: Pin,
+          action: () => addPinnedFolder({ name: item.name, path: item.path }),
+        },
+        {
+          label: "Delete",
+          icon: Trash2,
+          action: () => handleDelete(item.path),
+          danger: true,
+        },
+      );
+    } else {
+      // File
+      menuItems.push(
+        { label: "Open", icon: Edit, action: () => openEditor(item.path) },
+        {
+          label: "Download",
+          icon: Download,
+          action: () => handleDownload(item.path, item.name),
+        },
+        { label: "Copy", icon: Copy, action: () => copyToClipboard(item) },
+        {
+          label: "Cut",
+          icon: Scissors,
+          action: () => {
+            setClipboard({
+              action: "cut",
+              srcPath: item.path,
+              name: item.name,
+              type: "file",
+            });
+            showAlert("Cut", `${item.name} ready to move`);
+          },
+        },
+        { label: "Rename", icon: Pencil, action: () => openRenameDialog(item) },
+        { label: "Zip", icon: Package, action: () => handleZip([item.path]) },
+      );
+      if (isZip) {
+        menuItems.push({
+          label: "Unzip here",
+          icon: PackageOpen,
+          action: () => handleUnzip(item.path),
+        });
+      }
+      menuItems.push({
+        label: "Delete",
+        icon: Trash2,
+        action: () => handleDelete(item.path),
+        danger: true,
+      });
+    }
+
+    setContextMenu({ x: e.clientX, y: e.clientY, items: menuItems });
+  };
+
+  // ===== Close context menu on click anywhere =====
+  useEffect(() => {
+    const handler = () => setContextMenu(null);
+    window.addEventListener("click", handler);
+    window.addEventListener("scroll", handler, true);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("scroll", handler, true);
+    };
+  }, []);
+
+  // ===== Zip =====
+  const handleZip = async (paths: string[]) => {
+    if (paths.length === 0) return;
+    try {
+      setLoading(true);
+      const firstName = paths[0].split("/").pop() || "archive";
+      const destPath =
+        paths.length === 1
+          ? `${paths[0]}.zip`
+          : `${currentPath}/${firstName}_and_more.zip`.replace("//", "/");
+
+      const res = await fetch(`${API_URL}/api/ssh/zip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          paths,
+          dest_path: destPath,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadFiles();
+        showAlert("Zipped", destPath.split("/").pop() || "archive.zip");
+        xtermPrint(`[ZIP] ${destPath}`);
+      } else {
+        showAlert(
+          "Zip failed",
+          data?.detail || "Unknown error",
+          "destructive",
+          5000,
+        );
+      }
+    } catch (err: any) {
+      showAlert(
+        "Zip failed",
+        err?.message || "Unknown error",
+        "destructive",
+        5000,
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== Unzip =====
+  const handleUnzip = async (zipPath: string) => {
+    try {
+      setLoading(true);
+      const destDir = zipPath.replace(/\.(zip|tar\.gz|gz)$/i, "");
+      const res = await fetch(`${API_URL}/api/ssh/unzip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          zip_path: zipPath,
+          dest_dir: destDir,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadFiles();
+        showAlert("Unzipped", destDir.split("/").pop() || "extracted");
+        xtermPrint(`[UNZIP] ${zipPath} -> ${destDir}`);
+      } else {
+        showAlert(
+          "Unzip failed",
+          data?.detail || "Unknown error",
+          "destructive",
+          5000,
+        );
+      }
+    } catch (err: any) {
+      showAlert(
+        "Unzip failed",
+        err?.message || "Unknown error",
+        "destructive",
+        5000,
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== Multi-delete support =====
+  const performMultiDelete = async (paths: string[]) => {
+    for (const p of paths) {
+      try {
+        await fetch(
+          `${API_URL}/api/ssh/delete?session_id=${sessionId}&path=${encodeURIComponent(p)}`,
+          { method: "DELETE" },
+        );
+      } catch {}
+    }
+    loadFiles();
+    setSelectedFiles(new Set());
+    showAlert("Deleted", `${paths.length} items deleted`);
+    xtermPrint(`[DELETE] ${paths.length} items`);
+  };
+
+  // ===== Sort Toggle =====
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  // ===== Sorted + Filtered Files (computed) =====
+  const sortedFilteredFiles = React.useMemo(() => {
+    let result = [...files];
+
+    // Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((f) => f.name.toLowerCase().includes(q));
+    }
+
+    // Sort: folders always first
+    result.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "size":
+          cmp = (a.size || 0) - (b.size || 0);
+          break;
+        case "modified":
+          cmp = (a.modified || "").localeCompare(b.modified || "");
+          break;
+        case "type": {
+          const extA = a.name.includes(".") ? a.name.split(".").pop()! : "";
+          const extB = b.name.includes(".") ? b.name.split(".").pop()! : "";
+          cmp = extA.localeCompare(extB);
+          break;
+        }
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [files, searchQuery, sortField, sortOrder]);
+
+  // ===== Status bar computations =====
+  const statusBarInfo = React.useMemo(() => {
+    const totalItems = sortedFilteredFiles.length;
+    const selCount = selectedFiles.size;
+    const totalSize = sortedFilteredFiles
+      .filter((f) => f.type === "file")
+      .reduce((acc, f) => acc + (f.size || 0), 0);
+    const selectedSize = sortedFilteredFiles
+      .filter((f) => selectedFiles.has(f.path) && f.type === "file")
+      .reduce((acc, f) => acc + (f.size || 0), 0);
+    return { totalItems, selCount, totalSize, selectedSize };
+  }, [sortedFilteredFiles, selectedFiles]);
+
+  // ===== Keyboard Shortcuts =====
+  useEffect(() => {
+    if (!connected || activeTab !== "files") return;
+
+    const handler = (e: KeyboardEvent) => {
+      // Skip if any dialog/modal is open or if typing in an input
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (confirmOpen || folderDialogOpen || renameDialogOpen || runModalOpen)
+        return;
+
+      // Ctrl+A: select all
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        setSelectedFiles(new Set(sortedFilteredFiles.map((f) => f.path)));
+        return;
+      }
+
+      // Ctrl+C: copy
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) copyToClipboard(item);
+        }
+        return;
+      }
+
+      // Ctrl+X: cut
+      if ((e.ctrlKey || e.metaKey) && e.key === "x") {
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) {
+            setClipboard({
+              action: "cut",
+              srcPath: item.path,
+              name: item.name,
+              type: item.type,
+            });
+            showAlert("Cut", `${item.name} ready to move`);
+          }
+        }
+        return;
+      }
+
+      // Ctrl+V: paste
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (clipboard) pasteClipboard();
+        return;
+      }
+
+      // Delete: delete selected
+      if (e.key === "Delete") {
+        if (selectedFiles.size > 0) {
+          const paths = Array.from(selectedFiles);
+          if (paths.length === 1) {
+            handleDelete(paths[0]);
+          } else {
+            openConfirm(
+              { type: "delete", path: paths.join("|MULTI|") },
+              "Delete multiple items?",
+              `Permanently delete ${paths.length} selected items?`,
+            );
+          }
+        }
+        return;
+      }
+
+      // F2: rename
+      if (e.key === "F2") {
+        e.preventDefault();
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) openRenameDialog(item);
+        }
+        return;
+      }
+
+      // Backspace: go up
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        navigateUp();
+        return;
+      }
+
+      // Enter: open
+      if (e.key === "Enter") {
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) {
+            if (item.type === "folder") loadFiles(item.path);
+            else openEditor(item.path);
+          }
+        }
+        return;
+      }
+
+      // Escape: clear selection
+      if (e.key === "Escape") {
+        setSelectedFiles(new Set());
+        setContextMenu(null);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [
+    connected,
+    activeTab,
+    selectedFiles,
+    clipboard,
+    files,
+    sortedFilteredFiles,
+    confirmOpen,
+    folderDialogOpen,
+    renameDialogOpen,
+    runModalOpen,
+  ]);
+
+  // ===== Paste for cut (move) =====
+  const pasteClipboard = async () => {
+    if (!clipboard) return;
+
+    const baseName = clipboard.name;
+    const isCut = clipboard.action === "cut";
+
+    if (isCut) {
+      // Move
+      const destPath = `${currentPath}/${baseName}`.replace("//", "/");
+      try {
+        const res = await fetch(`${API_URL}/api/ssh/mv`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            src_path: clipboard.srcPath,
+            dest_path: destPath,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert("Moved", `${baseName} moved here`);
+          loadFiles();
+          setClipboard(null);
+          xtermPrint(`[MOVE] ${clipboard.srcPath} -> ${destPath}`);
+        } else {
+          showAlert(
+            "Move failed",
+            data?.detail || "Unknown error",
+            "destructive",
+          );
+        }
+      } catch (err) {
+        showAlert("Move failed", String(err), "destructive");
+      }
+    } else {
+      // Copy
+      const destPath = `${currentPath}/${baseName}-copy`.replace("//", "/");
+      try {
+        const res = await fetch(`${API_URL}/api/ssh/cp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            src_path: clipboard.srcPath,
+            dest_path: destPath,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert("Pasted", `${baseName} copied here`);
+          loadFiles();
+          setClipboard(null);
+          xtermPrint(`[COPY] ${clipboard.srcPath} -> ${destPath}`);
+        } else {
+          showAlert(
+            "Paste failed",
+            data?.detail || "Unknown error",
+            "destructive",
+          );
+        }
+      } catch (err) {
+        showAlert("Paste failed", String(err), "destructive");
+      }
+    }
+  };
+
+  // ===== Sort Icon Helper =====
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field)
+      return <ArrowUpDown size={12} className="opacity-30" />;
+    return sortOrder === "asc" ? (
+      <ArrowUp size={12} />
+    ) : (
+      <ArrowDown size={12} />
+    );
   };
 
   const formatUptime = (seconds: number) => {
@@ -2578,11 +3164,98 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
+            {/* ===== CONTEXT MENU ===== */}
+            {contextMenu && (
+              <div
+                className={`fixed z-9999 min-w-50 rounded-xl shadow-2xl border py-1.5 ${
+                  darkMode
+                    ? "bg-slate-800 border-slate-600"
+                    : "bg-white border-slate-200"
+                }`}
+                style={{
+                  left: Math.min(contextMenu.x, window.innerWidth - 220),
+                  top: Math.min(contextMenu.y, window.innerHeight - 300),
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {contextMenu.items.map((mi, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setContextMenu(null);
+                      mi.action();
+                    }}
+                    disabled={mi.disabled}
+                    className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                      mi.disabled
+                        ? `opacity-40 cursor-not-allowed`
+                        : mi.danger
+                          ? `text-red-500 ${darkMode ? "hover:bg-red-500/15" : "hover:bg-red-50"}`
+                          : `${themeClasses.text} ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-50"}`
+                    }`}
+                  >
+                    <mi.icon size={15} />
+                    {mi.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Hidden file input for context menu Upload action */}
+            <input
+              id="file-upload-input"
+              type="file"
+              multiple
+              onChange={handleUpload}
+              className="hidden"
+            />
+
             {/* ===== FILES TAB ===== */}
             {activeTab === "files" && (
               <div
-                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border`}
+                className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border relative`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  // Only trigger for external files (not pinned folder drags)
+                  if (e.dataTransfer.types.includes("Files")) {
+                    setDragOverUpload(true);
+                    e.dataTransfer.dropEffect = "copy";
+                  }
+                }}
+                onDragLeave={(e) => {
+                  // Only if leaving the container
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setDragOverUpload(false);
+                  }
+                }}
+                onDrop={handleDragDropUpload}
+                onContextMenu={(e) => {
+                  // Right-click on empty space (not on a file row)
+                  const target = e.target as HTMLElement;
+                  if (!target.closest("[data-file-row]")) {
+                    handleContextMenu(e);
+                  }
+                }}
               >
+                {/* Drag & Drop Overlay */}
+                {dragOverUpload && (
+                  <div className="absolute inset-0 z-50 bg-cyan-500/10 border-2 border-dashed border-cyan-500 rounded-2xl flex items-center justify-center pointer-events-none">
+                    <div className="text-center">
+                      <Upload
+                        size={48}
+                        className="text-cyan-500 mx-auto mb-3"
+                      />
+                      <p className="text-lg font-semibold text-cyan-600">
+                        Drop files here to upload
+                      </p>
+                      <p className={`text-sm mt-1 ${themeClasses.textMuted}`}>
+                        Files will be uploaded to {currentPath}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Toolbar: path + buttons */}
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2">
                     <button
@@ -2590,7 +3263,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                       className={`p-2 rounded-xl transition-all ${
                         darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"
                       }`}
-                      title="Go up"
+                      title="Go up (Backspace)"
                     >
                       ↑
                     </button>
@@ -2630,7 +3303,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                       <ClipboardPaste size={18} />
                       Paste
                     </button>
-
                     <button
                       onClick={() => loadFiles()}
                       className={`p-2 border rounded-xl transition-all ${
@@ -2644,171 +3316,168 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   </div>
                 </div>
 
+                {/* Search / Filter */}
+                <div className="mb-3">
+                  <div
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${themeClasses.input}`}
+                  >
+                    <Search size={16} className={themeClasses.textMuted} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Filter files..."
+                      className={`flex-1 bg-transparent outline-none text-sm ${themeClasses.text} placeholder:${themeClasses.textMuted}`}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className={themeClasses.textMuted}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* File Table with Sort Headers */}
                 <div
-                  className={`border rounded-xl overflow-hidden max-h-96 overflow-y-auto ${
+                  className={`border rounded-xl overflow-hidden ${
                     darkMode ? "border-slate-700" : "border-slate-200"
                   }`}
                 >
-                  {files.length === 0 ? (
-                    <div
-                      className={`p-8 text-center ${themeClasses.textMuted}`}
+                  {/* Column Headers */}
+                  <div
+                    className={`grid grid-cols-[1fr_100px_170px] gap-0 text-xs font-semibold select-none ${
+                      darkMode
+                        ? "bg-slate-700/50 text-slate-300"
+                        : "bg-slate-50 text-slate-500"
+                    }`}
+                  >
+                    <button
+                      onClick={() => toggleSort("name")}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 text-left transition-colors ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
                     >
-                      No files found
-                    </div>
-                  ) : (
-                    files.map((item) => (
+                      Name <SortIcon field="name" />
+                    </button>
+                    <button
+                      onClick={() => toggleSort("size")}
+                      className={`flex items-center gap-1.5 px-2 py-2.5 text-left transition-colors ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
+                    >
+                      Size <SortIcon field="size" />
+                    </button>
+                    <button
+                      onClick={() => toggleSort("modified")}
+                      className={`flex items-center gap-1.5 px-2 py-2.5 text-left transition-colors ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
+                    >
+                      Modified <SortIcon field="modified" />
+                    </button>
+                  </div>
+
+                  {/* File Rows */}
+                  <div className="max-h-105 overflow-y-auto">
+                    {sortedFilteredFiles.length === 0 ? (
                       <div
-                        key={item.path}
-                        onDoubleClick={() => {
-                          if (item.type === "folder") loadFiles(item.path);
-                          else openEditor(item.path);
-                        }}
-                        className={`flex items-center gap-2 p-3 cursor-pointer group transition-colors ${
-                          darkMode
-                            ? "hover:bg-slate-700/50"
-                            : "hover:bg-slate-50"
-                        }`}
-                        draggable={item.type === "folder"}
-                        onDragStart={(e) => {
-                          if (item.type !== "folder") return;
-                          e.dataTransfer.setData(
-                            "application/x-ssh-folder",
-                            JSON.stringify({
-                              name: item.name,
-                              path: item.path,
-                            }),
-                          );
-                          e.dataTransfer.effectAllowed = "copy";
-                        }}
+                        className={`p-8 text-center ${themeClasses.textMuted}`}
                       >
-                        {item.type === "folder" ? (
-                          <Folder size={18} className="text-cyan-500" />
-                        ) : (
-                          <File size={18} className={themeClasses.textMuted} />
-                        )}
-
-                        <span className={`flex-1 text-sm ${themeClasses.text}`}>
-                          {item.name}
-                        </span>
-
-                        <span className={`text-xs ${themeClasses.textMuted}`}>
-                          {item.sizeStr}
-                        </span>
-                        <span className={`text-xs ${themeClasses.textMuted}`}>
-                          {item.modified}
-                        </span>
-
-                        <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-                          {item.type === "file" && (
-                            <>
-                              <button
-                                onClick={() => openEditor(item.path)}
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  darkMode
-                                    ? "hover:bg-slate-600"
-                                    : "hover:bg-slate-200"
-                                }`}
-                                title="Edit"
-                              >
-                                <Edit
-                                  size={14}
-                                  className={themeClasses.textMuted}
-                                />
-                              </button>
-                              <button
-                                onClick={() =>
-                                  handleDownload(item.path, item.name)
-                                }
-                                title="Download"
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  darkMode
-                                    ? "hover:bg-slate-600"
-                                    : "hover:bg-slate-200"
-                                }`}
-                              >
-                                <Download
-                                  size={14}
-                                  className={themeClasses.textMuted}
-                                />
-                              </button>
-                            </>
-                          )}
-
-                          {item.type === "folder" && (
-                            <button
-                              onClick={() => loadFiles(item.path)}
-                              className={`p-1.5 rounded-lg text-cyan-500 transition-colors ${
-                                darkMode
-                                  ? "hover:bg-slate-600"
-                                  : "hover:bg-slate-200"
-                              }`}
-                            >
-                              <ChevronRight size={14} />
-                            </button>
-                          )}
-
-                          {item.type === "file" && item.name.endsWith(".py") ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRunScriptModal(item.path);
-                              }}
-                              className={`p-1.5 rounded-lg text-emerald-500 transition-colors ${
-                                darkMode
-                                  ? "hover:bg-slate-600"
-                                  : "hover:bg-slate-200"
-                              }`}
-                              title="Run"
-                            >
-                              <Play size={14} />
-                            </button>
-                          ) : null}
-
-                          <button
-                            onClick={() => openRenameDialog(item)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              darkMode
-                                ? "hover:bg-slate-600"
-                                : "hover:bg-slate-200"
-                            }`}
-                            title="Rename"
-                          >
-                            <Pencil
-                              size={14}
-                              className={themeClasses.textMuted}
-                            />
-                          </button>
-
-                          <button
-                            onClick={() => copyToClipboard(item)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              darkMode
-                                ? "hover:bg-slate-600"
-                                : "hover:bg-slate-200"
-                            }`}
-                            title="Copy"
-                          >
-                            <Copy
-                              size={14}
-                              className={themeClasses.textMuted}
-                            />
-                          </button>
-
-                          <button
-                            onClick={() => handleDelete(item.path)}
-                            className={`p-1.5 rounded-lg text-red-500 transition-colors ${
-                              darkMode
-                                ? "hover:bg-red-500/20"
-                                : "hover:bg-red-50"
-                            }`}
-                            title="Delete"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+                        {searchQuery ? "No matching files" : "No files found"}
                       </div>
-                    ))
-                  )}
+                    ) : (
+                      sortedFilteredFiles.map((item, idx) => {
+                        const isSelected = selectedFiles.has(item.path);
+                        return (
+                          <div
+                            key={item.path}
+                            data-file-row="true"
+                            onClick={(e) => handleFileClick(e, item, idx)}
+                            onDoubleClick={() => {
+                              if (item.type === "folder") loadFiles(item.path);
+                              else openEditor(item.path);
+                            }}
+                            onContextMenu={(e) => handleContextMenu(e, item)}
+                            className={`grid grid-cols-[1fr_100px_170px] gap-0 items-center cursor-pointer transition-colors border-t ${
+                              isSelected
+                                ? darkMode
+                                  ? "bg-cyan-500/15 border-cyan-500/30"
+                                  : "bg-cyan-50 border-cyan-200"
+                                : darkMode
+                                  ? "border-slate-700/50 hover:bg-slate-700/30"
+                                  : "border-slate-100 hover:bg-slate-50"
+                            }`}
+                            draggable={item.type === "folder"}
+                            onDragStart={(e) => {
+                              if (item.type !== "folder") return;
+                              e.dataTransfer.setData(
+                                "application/x-ssh-folder",
+                                JSON.stringify({
+                                  name: item.name,
+                                  path: item.path,
+                                }),
+                              );
+                              e.dataTransfer.effectAllowed = "copy";
+                            }}
+                          >
+                            <div className="flex items-center gap-2.5 px-4 py-2.5 min-w-0">
+                              {item.type === "folder" ? (
+                                <Folder
+                                  size={17}
+                                  className="text-cyan-500 shrink-0"
+                                />
+                              ) : (
+                                <File
+                                  size={17}
+                                  className={`${themeClasses.textMuted} shrink-0`}
+                                />
+                              )}
+                              <span
+                                className={`text-sm truncate ${themeClasses.text}`}
+                              >
+                                {item.name}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-xs px-2 ${themeClasses.textMuted}`}
+                            >
+                              {item.sizeStr}
+                            </span>
+                            <span
+                              className={`text-xs px-2 ${themeClasses.textMuted}`}
+                            >
+                              {item.modified}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Status Bar */}
+                <div
+                  className={`mt-3 flex items-center justify-between text-xs px-1 ${themeClasses.textMuted}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <span>
+                      {statusBarInfo.totalItems} item
+                      {statusBarInfo.totalItems !== 1 ? "s" : ""}
+                    </span>
+                    {statusBarInfo.selCount > 0 && (
+                      <span className="text-cyan-500 font-medium">
+                        {statusBarInfo.selCount} selected
+                        {statusBarInfo.selectedSize > 0 &&
+                          ` (${formatBytes(statusBarInfo.selectedSize)})`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span>Total: {formatBytes(statusBarInfo.totalSize)}</span>
+                    {clipboard && (
+                      <span className="text-emerald-500 font-medium">
+                        {clipboard.action === "cut" ? "✂" : "📋"}{" "}
+                        {clipboard.name}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
