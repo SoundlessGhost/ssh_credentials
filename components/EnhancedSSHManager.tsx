@@ -41,7 +41,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   ClipboardPaste,
-  Play,
   Moon,
   Sun,
   Pencil,
@@ -245,9 +244,6 @@ const EnhancedSSHManager: React.FC = () => {
     ? `ssh_pinned_folders_${credentials.username}@${credentials.host}`
     : null;
 
-  // ===== Script Run Modal =====
-  const [runOut, setRunOut] = useState("");
-
   // ===== Multi-select =====
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const lastClickedIndexRef = useRef<number | null>(null);
@@ -264,14 +260,6 @@ const EnhancedSSHManager: React.FC = () => {
 
   // ===== Drag & Drop Upload =====
   const [dragOverUpload, setDragOverUpload] = useState(false);
-  const [runInput, setRunInput] = useState("");
-  const [runTimeout, setRunTimeout] = useState(60);
-  const [runServers, setRunServers] = useState("");
-  const [runResume, setRunResume] = useState(true);
-  const [runApiKey, setRunApiKey] = useState("root");
-  const [runScriptPath, setRunScriptPath] = useState("");
-  const [runModalOpen, setRunModalOpen] = useState(false);
-  const [runConcurrency, setRunConcurrency] = useState(500);
 
   // ===== xterm refs =====
   const pasteLockRef = useRef(false);
@@ -1569,105 +1557,6 @@ const EnhancedSSHManager: React.FC = () => {
     });
   };
 
-  // ===== Run Script =====
-  const openRunScriptModal = (path: string) => {
-    if (!connected || !sessionId) {
-      showAlert(
-        "Not connected",
-        "Connect first, then run scripts.",
-        "destructive",
-      );
-      return;
-    }
-
-    setRunScriptPath(path);
-    const out = `${parentDir(path)}/output`.replace(/\/{2,}/g, "/");
-    setRunOut(out);
-    setRunModalOpen(true);
-  };
-
-  const runScript = async () => {
-    if (!runScriptPath) {
-      showAlert("Missing script", "Script path not set.", "destructive");
-      return;
-    }
-    if (!runInput.trim()) {
-      showAlert("Missing input", "Please set input file path.", "destructive");
-      return;
-    }
-    if (!runOut.trim()) {
-      showAlert(
-        "Missing output",
-        "Please set output folder path.",
-        "destructive",
-      );
-      return;
-    }
-    if (!runServers.trim()) {
-      showAlert("Missing servers", "Please set servers list.", "destructive");
-      return;
-    }
-
-    const safeOut = runOut.replace(/\/{2,}/g, "/");
-    const logFile = `${safeOut}/run_${Date.now()}.log`.replace(/\/{2,}/g, "/");
-
-    const cmd = `
-bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
-  --input "${runInput}" \
-  --out "${safeOut}" \
-  --api-key "${runApiKey}" \
-  --concurrency ${Number(runConcurrency) || 1} \
-  --timeout ${Number(runTimeout) || 60} \
-  --servers "${runServers}" \
-  ${runResume ? "--resume" : ""} \
-  > "${logFile}" 2>&1 & echo "PID:$!" && echo "LOG:${logFile}"'
-`.trim();
-
-    setActiveTab("terminal");
-    xtermPrint("");
-    xtermPrint(`[${new Date().toLocaleTimeString()}] RUN SCRIPT`);
-    xtermPrint(`$ ${cmd}`);
-    xtermPrint("");
-
-    try {
-      const res = await fetch(`${API_URL}/api/ssh/execute`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          command: cmd,
-          working_dir: parentDir(runScriptPath),
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data?.output) xtermPrint(data.output);
-      if (data?.error) xtermPrint(`ERROR: ${data.error}`);
-
-      xtermPrint("");
-      xtermPrint(`[tip] To watch logs:`);
-      xtermPrint(`$ tail -f "${logFile}"`);
-      xtermPrint("");
-
-      showAlert(
-        "Started",
-        "Script started in background. Check logs in Terminal.",
-        "default",
-        3500,
-      );
-      setRunModalOpen(false);
-    } catch (err: any) {
-      xtermPrint(`ERROR: ${err?.message || "Unknown error"}`);
-      showAlert(
-        "Run failed",
-        err?.message || "Unknown error",
-        "destructive",
-        6000,
-      );
-    }
-  };
-
   // ===== Multi-Select Handler =====
   const handleFileClick = (
     e: React.MouseEvent,
@@ -1842,7 +1731,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
       );
       if (isZip) {
         menuItems.push({
-          label: "Unzip here",
+          label: "Extract All...",
           icon: PackageOpen,
           action: () => handleUnzip(item.path),
         });
@@ -2042,8 +1931,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
       // Skip if any dialog/modal is open or if typing in an input
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-      if (confirmOpen || folderDialogOpen || renameDialogOpen || runModalOpen)
-        return;
+      if (confirmOpen || folderDialogOpen || renameDialogOpen) return;
 
       // Ctrl+A: select all
       if ((e.ctrlKey || e.metaKey) && e.key === "a") {
@@ -2150,7 +2038,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
     confirmOpen,
     folderDialogOpen,
     renameDialogOpen,
-    runModalOpen,
   ]);
 
   // ===== Paste for cut (move) =====
@@ -2504,140 +2391,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               className={themeClasses.button}
             >
               Create
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Run Script Modal */}
-      <AlertDialog open={runModalOpen} onOpenChange={setRunModalOpen}>
-        <AlertDialogContent
-          className={`max-w-xl ${darkMode ? "bg-slate-800 border-slate-700" : ""}`}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle className={themeClasses.text}>
-              Run Script
-            </AlertDialogTitle>
-            <AlertDialogDescription className={themeClasses.textMuted}>
-              Configure and run:{" "}
-              <span className="font-mono text-cyan-500">{runScriptPath}</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          <div className="space-y-4 mt-4">
-            <div>
-              <label
-                className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-              >
-                Input File (--input)
-              </label>
-              <Input
-                value={runInput}
-                onChange={(e) => setRunInput(e.target.value)}
-                placeholder="/path/to/input.txt"
-                className={themeClasses.input}
-              />
-            </div>
-
-            <div>
-              <label
-                className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-              >
-                Output Folder (--out)
-              </label>
-              <Input
-                value={runOut}
-                onChange={(e) => setRunOut(e.target.value)}
-                placeholder="/path/to/output"
-                className={themeClasses.input}
-              />
-            </div>
-
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label
-                  className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-                >
-                  API Key
-                </label>
-                <Input
-                  value={runApiKey}
-                  onChange={(e) => setRunApiKey(e.target.value)}
-                  className={themeClasses.input}
-                />
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-                >
-                  Concurrency
-                </label>
-                <Input
-                  type="number"
-                  value={runConcurrency}
-                  onChange={(e) => setRunConcurrency(Number(e.target.value))}
-                  className={themeClasses.input}
-                />
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-                >
-                  Timeout (s)
-                </label>
-                <Input
-                  type="number"
-                  value={runTimeout}
-                  onChange={(e) => setRunTimeout(Number(e.target.value))}
-                  className={themeClasses.input}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label
-                className={`block text-sm font-semibold mb-1 ${themeClasses.text}`}
-              >
-                Servers (--servers)
-              </label>
-              <textarea
-                value={runServers}
-                onChange={(e) => setRunServers(e.target.value)}
-                className={`w-full h-28 p-3 border rounded-xl font-mono text-sm ${themeClasses.input}`}
-                placeholder="109.199.122.106:9000,109.199.122.106:8888"
-              />
-            </div>
-
-            <label
-              className={`flex items-center gap-2 text-sm ${themeClasses.text}`}
-            >
-              <input
-                type="checkbox"
-                checked={runResume}
-                onChange={(e) => setRunResume(e.target.checked)}
-                className="rounded border-slate-300"
-              />
-              Use --resume
-            </label>
-          </div>
-
-          <AlertDialogFooter className="mt-4">
-            <AlertDialogCancel
-              onClick={() => setRunModalOpen(false)}
-              className={
-                darkMode
-                  ? "bg-slate-700 text-slate-200 border-slate-600 hover:bg-slate-600"
-                  : ""
-              }
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={runScript}
-              className={themeClasses.button}
-            >
-              <Play size={16} className="mr-2" />
-              Run
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -3172,7 +2925,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
             {/* ===== CONTEXT MENU ===== */}
             {contextMenu && (
               <div
-                className={`fixed z-9999 min-w-50 rounded-xl shadow-2xl border py-1.5 ${
+                className={`fixed z-50 min-w-50 rounded-xl shadow-2xl border py-1.5 ${
                   darkMode
                     ? "bg-slate-800 border-slate-600"
                     : "bg-white border-slate-200"
