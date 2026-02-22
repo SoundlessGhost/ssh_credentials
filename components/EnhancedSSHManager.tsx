@@ -1719,7 +1719,10 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
     const isZip =
       item?.name?.endsWith(".zip") ||
       item?.name?.endsWith(".tar.gz") ||
-      item?.name?.endsWith(".gz");
+      item?.name?.endsWith(".tgz") ||
+      item?.name?.endsWith(".tar") ||
+      item?.name?.endsWith(".gz") ||
+      item?.name?.endsWith(".rar");
     const menuItems: ContextMenuState extends null
       ? never
       : NonNullable<ContextMenuState>["items"] = [];
@@ -1888,9 +1891,11 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
       });
       const data = await res.json();
       if (data.success) {
+        const actualPath = data.path || destPath;
+        const format = data.format || "zip";
         loadFiles();
-        showAlert("Zipped", destPath.split("/").pop() || "archive.zip");
-        xtermPrint(`[ZIP] ${destPath}`);
+        showAlert("Compressed", `${actualPath.split("/").pop()} (${format})`);
+        xtermPrint(`[ZIP] ${actualPath}`);
       } else {
         showAlert(
           "Zip failed",
@@ -1915,7 +1920,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
   const handleUnzip = async (zipPath: string) => {
     try {
       setLoading(true);
-      const destDir = zipPath.replace(/\.(zip|tar\.gz|gz)$/i, "");
+      const destDir = zipPath.replace(/\.(zip|tar\.gz|tgz|tar|gz|rar)$/i, "");
       const res = await fetch(`${API_URL}/api/ssh/unzip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

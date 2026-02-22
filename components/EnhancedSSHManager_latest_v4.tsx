@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { Input } from "@/components/ui/input";
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 import {
@@ -27,7 +27,6 @@ import {
   Trash2,
   RefreshCw,
   Terminal as TerminalIcon,
-  ChevronRight,
   Lock,
   LogOut,
   Edit,
@@ -50,9 +49,18 @@ import {
   Zap,
   Shield,
   Search,
+  Scissors,
+  Package,
+  PackageOpen,
+  Pin,
+  FolderOpen,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 const API_URL = "https://api.dekhai.org";
+// const API_URL = "http://localhost:2247";
 
 // ===== All Interface =====
 interface SSHCredentials {
@@ -126,12 +134,27 @@ type ClipboardState = {
 
 type ConfirmAction =
   | { type: "delete"; path: string }
-  | { type: "multiDelete"; paths: string[] }
   | { type: "kill"; pid: number }
   | { type: "closeEditor" }
   | null;
 
 type PinnedFolder = { name: string; path: string };
+
+type SortField = "name" | "size" | "modified" | "type";
+type SortOrder = "asc" | "desc";
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+  items: {
+    label: string;
+    icon: any;
+    action: () => void;
+    danger?: boolean;
+    disabled?: boolean;
+    divider?: boolean;
+  }[];
+} | null;
 
 const EnhancedSSHManager: React.FC = () => {
   // ===== Dark Mode =====
@@ -193,30 +216,10 @@ const EnhancedSSHManager: React.FC = () => {
     percent: number;
     speed: string;
   } | null>(null);
+
   const downloadAbortRef = useRef<AbortController | null>(null);
   const uploadTransferIdRef = useRef<string | null>(null);
   const transferCancelledRef = useRef(false);
-
-  // ===== Multi-select =====
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const lastSelectedRef = useRef<string | null>(null);
-
-  // ===== Context Menu =====
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    item: FileItem | null;
-  } | null>(null);
-
-  // ===== Sort =====
-  const [sortBy, setSortBy] = useState<"name" | "size" | "modified">("name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-
-  // ===== Search =====
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // ===== Drag & Drop =====
-  const [dragOver, setDragOver] = useState(false);
 
   // ===== Editor =====
   const [editorContent, setEditorContent] = useState("");
@@ -244,6 +247,23 @@ const EnhancedSSHManager: React.FC = () => {
 
   // ===== Script Run Modal =====
   const [runOut, setRunOut] = useState("");
+
+  // ===== Multi-select =====
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const lastClickedIndexRef = useRef<number | null>(null);
+
+  // ===== Context Menu =====
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+
+  // ===== Sort =====
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+
+  // ===== Search/Filter =====
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // ===== Drag & Drop Upload =====
+  const [dragOverUpload, setDragOverUpload] = useState(false);
   const [runInput, setRunInput] = useState("");
   const [runTimeout, setRunTimeout] = useState(60);
   const [runServers, setRunServers] = useState("");
@@ -327,175 +347,6 @@ const EnhancedSSHManager: React.FC = () => {
     showAlert("Cancelled", "Transfer cancelled.");
   };
 
-  // ===== Filtered + Sorted Files (memoized for performance) =====
-  const filteredSortedFiles = useMemo(() => {
-    let result = [...files];
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter((f) => f.name.toLowerCase().includes(q));
-    }
-    result.sort((a, b) => {
-      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-      let cmp = 0;
-      if (sortBy === "name") cmp = a.name.localeCompare(b.name);
-      else if (sortBy === "size") cmp = (a.size || 0) - (b.size || 0);
-      else if (sortBy === "modified")
-        cmp = (a.modified || "").localeCompare(b.modified || "");
-      return sortOrder === "asc" ? cmp : -cmp;
-    });
-    return result;
-  }, [files, searchQuery, sortBy, sortOrder]);
-
-  // ===== Selection Handlers =====
-  const handleFileClick = (item: FileItem, e: React.MouseEvent) => {
-    if (e.ctrlKey || e.metaKey) {
-      setSelectedFiles((prev) => {
-        const next = new Set(prev);
-        if (next.has(item.path)) {
-          next.delete(item.path);
-        } else {
-          next.add(item.path);
-        }
-        return next;
-      });
-      lastSelectedRef.current = item.path;
-    } else if (e.shiftKey && lastSelectedRef.current) {
-      const paths = filteredSortedFiles.map((f) => f.path);
-      const lastIdx = paths.indexOf(lastSelectedRef.current);
-      const curIdx = paths.indexOf(item.path);
-      if (lastIdx >= 0 && curIdx >= 0) {
-        const start = Math.min(lastIdx, curIdx);
-        const end = Math.max(lastIdx, curIdx);
-        setSelectedFiles(new Set(paths.slice(start, end + 1)));
-      }
-    } else {
-      setSelectedFiles(new Set([item.path]));
-      lastSelectedRef.current = item.path;
-    }
-  };
-
-  // ===== Context Menu =====
-  const handleContextMenu = (e: React.MouseEvent, item: FileItem | null) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (item && !selectedFiles.has(item.path)) {
-      setSelectedFiles(new Set([item.path]));
-      lastSelectedRef.current = item.path;
-    }
-    setContextMenu({ x: e.clientX, y: e.clientY, item });
-  };
-
-  // ===== Sort Toggle =====
-  const toggleSort = (col: "name" | "size" | "modified") => {
-    if (sortBy === col)
-      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
-    else {
-      setSortBy(col);
-      setSortOrder("asc");
-    }
-  };
-
-  const sortArrow = (col: string) =>
-    sortBy === col ? (sortOrder === "asc" ? " ▲" : " ▼") : "";
-
-  // ===== Multi-delete =====
-  const handleMultiDelete = () => {
-    if (selectedFiles.size === 0) return;
-    if (selectedFiles.size === 1) {
-      handleDelete(Array.from(selectedFiles)[0]);
-    } else {
-      openConfirm(
-        { type: "multiDelete", paths: Array.from(selectedFiles) },
-        `Delete ${selectedFiles.size} items?`,
-        `This will permanently delete ${selectedFiles.size} selected items.`,
-      );
-    }
-  };
-
-  // ===== Drag & Drop Upload =====
-  const handleFileDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    if (
-      e.dataTransfer.types.includes("application/x-ssh-folder") ||
-      e.dataTransfer.types.includes("application/x-ssh-pinned")
-    )
-      return;
-    const droppedFiles = e.dataTransfer.files;
-    if (!droppedFiles || droppedFiles.length === 0) return;
-
-    for (let i = 0; i < droppedFiles.length; i++) {
-      const file = droppedFiles[i];
-      const formData = new FormData();
-      formData.append("file", file);
-      const startTime = Date.now();
-      transferCancelledRef.current = false;
-
-      try {
-        setLoading(true);
-        setTransferProgress({
-          active: true,
-          type: "upload",
-          filename: file.name,
-          loaded: 0,
-          total: file.size,
-          percent: 0,
-          speed: "sending...",
-        });
-        const res = await fetch(
-          `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
-          { method: "POST", body: formData },
-        );
-        const data = await res.json();
-        if (data.transfer_id) {
-          uploadTransferIdRef.current = data.transfer_id;
-          let done = false;
-          while (!done && !transferCancelledRef.current) {
-            await new Promise((r) => setTimeout(r, 300));
-            try {
-              const pRes = await fetch(
-                `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(data.transfer_id)}`,
-              );
-              const p = await pRes.json();
-              if (p.status === "uploading") {
-                const elapsed = (Date.now() - startTime) / 1000;
-                const speed = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
-                setTransferProgress({
-                  active: true,
-                  type: "upload",
-                  filename: file.name,
-                  loaded: p.loaded || 0,
-                  total: p.total || file.size,
-                  percent: p.percent || 0,
-                  speed:
-                    speed > 1048576
-                      ? `${(speed / 1048576).toFixed(1)} MB/s`
-                      : `${(speed / 1024).toFixed(0)} KB/s`,
-                });
-              } else {
-                done = true;
-              }
-            } catch {}
-          }
-          uploadTransferIdRef.current = null;
-        }
-        setTransferProgress(null);
-        loadFiles();
-        showAlert("Uploaded", `${file.name} (${formatBytes(file.size)})`);
-      } catch (err: any) {
-        setTransferProgress(null);
-        showAlert(
-          "Upload failed",
-          err?.message || "Unknown error",
-          "destructive",
-          6000,
-        );
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
   const xtermPrint = (text: string) => {
     const t = xtermRef.current;
     if (!t) return;
@@ -576,9 +427,8 @@ const EnhancedSSHManager: React.FC = () => {
           try {
             const text = await navigator.clipboard.readText();
             if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(text);
               suppressInputRef.current = true;
-              wsRef.current.send(text);
+              wsRef.current.send(text.replace(/\r?\n$/, ""));
               setTimeout(() => {
                 suppressInputRef.current = false;
               }, 150);
@@ -607,13 +457,13 @@ const EnhancedSSHManager: React.FC = () => {
           if (ev.ctrlKey && !ev.shiftKey && key === "v") {
             if (pasteLockRef.current) return false; // already handled
             pasteLockRef.current = true;
+            suppressInputRef.current = true; // ← IMMEDIATELY block onData to prevent duplicates
 
             navigator.clipboard
               .readText()
               .then((text) => {
                 if (text && wsRef.current?.readyState === WebSocket.OPEN) {
-                  suppressInputRef.current = true;
-                  wsRef.current.send(text);
+                  wsRef.current.send(text.replace(/\r?\n$/, ""));
                   setTimeout(() => {
                     suppressInputRef.current = false;
                   }, 150);
@@ -863,71 +713,6 @@ const EnhancedSSHManager: React.FC = () => {
     if (connected) loadFiles();
   }, [connected]);
 
-  // ===== Clear selection on path change =====
-  useEffect(() => {
-    setSelectedFiles(new Set());
-    setSearchQuery("");
-    setContextMenu(null);
-  }, [currentPath]);
-
-  // ===== Close context menu on any click =====
-  useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("scroll", close, true);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("scroll", close, true);
-    };
-  }, [contextMenu]);
-
-  // ===== Keyboard shortcuts (Files tab) =====
-  useEffect(() => {
-    if (!connected || activeTab !== "files") return;
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      if (e.key === "Delete" && selectedFiles.size > 0) {
-        e.preventDefault();
-        if (selectedFiles.size === 1)
-          handleDelete(Array.from(selectedFiles)[0]);
-        else handleMultiDelete();
-      }
-      if (e.key === "F2" && selectedFiles.size === 1) {
-        e.preventDefault();
-        const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
-        if (item) openRenameDialog(item);
-      }
-      if (e.key === "Backspace") {
-        e.preventDefault();
-        navigateUp();
-      }
-      if (e.key === "Enter" && selectedFiles.size === 1) {
-        const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
-        if (item) {
-          if (item.type === "folder") loadFiles(item.path);
-          else openEditor(item.path);
-        }
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
-        e.preventDefault();
-        setSelectedFiles(new Set(filteredSortedFiles.map((f) => f.path)));
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedFiles.size > 0) {
-        const item = files.find((f) => f.path === Array.from(selectedFiles)[0]);
-        if (item) copyToClipboard(item);
-      }
-      if (e.key === "Escape") {
-        setSelectedFiles(new Set());
-        setContextMenu(null);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [connected, activeTab, selectedFiles, files, filteredSortedFiles]);
-
   // ===== Confirm helpers =====
   const openConfirm = (action: ConfirmAction, title: string, desc: string) => {
     setConfirmAction(action);
@@ -1160,6 +945,9 @@ const EnhancedSSHManager: React.FC = () => {
       if (data.success) {
         setFiles(data.items);
         setCurrentPath(data.path);
+        setSelectedFiles(new Set());
+        lastClickedIndexRef.current = null;
+        setSearchQuery("");
       }
     } catch (err: any) {
       showAlert(
@@ -1227,10 +1015,8 @@ const EnhancedSSHManager: React.FC = () => {
     }
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
+  // ===== Reusable upload function (used by both button + drag&drop) =====
+  const uploadFiles = async (fileList: File[]) => {
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
       const formData = new FormData();
@@ -1249,14 +1035,16 @@ const EnhancedSSHManager: React.FC = () => {
           speed: "sending...",
         });
 
-        // Phase 1: Browser → API (XHR progress, 0→90%)
+        // ===== Phase 1: Browser → API (XHR with upload progress) =====
         const xhrResult = await new Promise<any>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           const startTime = Date.now();
+
           xhr.open(
             "POST",
             `${API_URL}/api/ssh/upload?session_id=${sessionId}&path=${encodeURIComponent(currentPath)}`,
           );
+
           xhr.upload.onprogress = (evt) => {
             if (evt.lengthComputable) {
               const elapsed = (Date.now() - startTime) / 1000;
@@ -1276,6 +1064,7 @@ const EnhancedSSHManager: React.FC = () => {
               });
             }
           };
+
           xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
@@ -1283,7 +1072,9 @@ const EnhancedSSHManager: React.FC = () => {
               } catch {
                 reject(new Error("Invalid response"));
               }
-            } else reject(new Error(`HTTP ${xhr.status}`));
+            } else {
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
           };
           xhr.onerror = () => reject(new Error("Network error"));
           xhr.send(formData);
@@ -1300,12 +1091,14 @@ const EnhancedSSHManager: React.FC = () => {
           continue;
         }
 
-        // Phase 2: API → Remote SFTP (poll, 90→100%)
         const transferId = xhrResult.transfer_id;
         uploadTransferIdRef.current = transferId;
+
+        // ===== Phase 2: API → Remote SFTP (poll progress) =====
         if (transferId) {
           const sftpStart = Date.now();
           let done = false;
+
           setTransferProgress({
             active: true,
             type: "upload",
@@ -1315,6 +1108,7 @@ const EnhancedSSHManager: React.FC = () => {
             percent: 90,
             speed: "starting SFTP...",
           });
+
           while (!done && !transferCancelledRef.current) {
             await new Promise((r) => setTimeout(r, 300));
             try {
@@ -1322,6 +1116,7 @@ const EnhancedSSHManager: React.FC = () => {
                 `${API_URL}/api/ssh/transfer-progress?transfer_id=${encodeURIComponent(transferId)}`,
               );
               const p = await pRes.json();
+
               if (p.status === "uploading") {
                 const elapsed = (Date.now() - sftpStart) / 1000;
                 const speedBps = elapsed > 0 ? (p.loaded || 0) / elapsed : 0;
@@ -1329,13 +1124,14 @@ const EnhancedSSHManager: React.FC = () => {
                   speedBps > 1024 * 1024
                     ? `${(speedBps / (1024 * 1024)).toFixed(1)} MB/s`
                     : `${(speedBps / 1024).toFixed(0)} KB/s`;
+                const sftpPercent = p.percent || 0;
                 setTransferProgress({
                   active: true,
                   type: "upload",
                   filename: `${file.name} (SFTP...)`,
                   loaded: p.loaded || 0,
                   total: p.total || file.size,
-                  percent: 90 + Math.round((p.percent || 0) / 10),
+                  percent: 90 + Math.round(sftpPercent / 10),
                   speed: speedStr,
                 });
               } else if (p.status === "done") {
@@ -1363,13 +1159,16 @@ const EnhancedSSHManager: React.FC = () => {
                 done = true;
                 setTransferProgress(null);
               }
-            } catch {}
+            } catch {
+              /* retry */
+            }
           }
         } else {
           setTransferProgress(null);
           loadFiles();
           showAlert("Uploaded", file.name);
         }
+
         uploadTransferIdRef.current = null;
       } catch (err: any) {
         setTransferProgress(null);
@@ -1383,7 +1182,25 @@ const EnhancedSSHManager: React.FC = () => {
         setLoading(false);
       }
     }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
+    await uploadFiles(Array.from(fileList));
     e.target.value = "";
+  };
+
+  // ===== Drag & Drop Upload =====
+  const handleDragDropUpload = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverUpload(false);
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) return;
+    // Filter out folders (folders have size 0 and no type typically, but best effort)
+    const files = Array.from(droppedFiles).filter((f) => f.size > 0 || f.type);
+    if (files.length === 0) return;
+    await uploadFiles(files);
   };
 
   const handleDownload = async (path: string, filename: string) => {
@@ -1391,6 +1208,7 @@ const EnhancedSSHManager: React.FC = () => {
     transferCancelledRef.current = false;
     const abortCtrl = new AbortController();
     downloadAbortRef.current = abortCtrl;
+
     try {
       const res = await fetch(
         `${API_URL}/api/ssh/download?session_id=${sessionId}&path=${encodeURIComponent(path)}`,
@@ -1400,6 +1218,7 @@ const EnhancedSSHManager: React.FC = () => {
         showAlert("Download failed", `HTTP ${res.status}`, "destructive", 5000);
         return;
       }
+
       const contentLength = parseInt(
         res.headers.get("Content-Length") ||
           res.headers.get("X-File-Size") ||
@@ -1407,6 +1226,7 @@ const EnhancedSSHManager: React.FC = () => {
         10,
       );
       const reader = res.body?.getReader();
+
       if (!reader) {
         const blob = await res.blob();
         const url = window.URL.createObjectURL(blob);
@@ -1418,6 +1238,7 @@ const EnhancedSSHManager: React.FC = () => {
         showAlert("Downloaded", filename);
         return;
       }
+
       const chunks: Uint8Array[] = [];
       let received = 0;
       while (true) {
@@ -1546,42 +1367,6 @@ const EnhancedSSHManager: React.FC = () => {
       }
     } catch (e) {
       showAlert("Rename failed", String(e), "destructive");
-    }
-  };
-
-  // ===== Clipboard =====
-  const pasteClipboard = async () => {
-    if (!clipboard) return;
-
-    const baseName = clipboard.name;
-    const destPath = `${currentPath}/${baseName}-copy`.replace("//", "/");
-
-    try {
-      const res = await fetch(`${API_URL}/api/ssh/cp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: sessionId,
-          src_path: clipboard.srcPath,
-          dest_path: destPath,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        showAlert("Pasted", `${baseName} copied here`);
-        loadFiles();
-        setClipboard(null);
-        xtermPrint(`[COPY] ${clipboard.srcPath} -> ${destPath}`);
-      } else {
-        showAlert(
-          "Paste failed",
-          data?.detail || "Unknown error",
-          "destructive",
-        );
-      }
-    } catch (e) {
-      showAlert("Paste failed", String(e), "destructive");
     }
   };
 
@@ -1754,18 +1539,12 @@ const EnhancedSSHManager: React.FC = () => {
     if (!action) return;
 
     if (action.type === "delete") {
-      await performDelete(action.path);
-      setSelectedFiles(new Set());
-      return;
-    }
-    if (action.type === "multiDelete") {
-      for (const p of action.paths) {
-        try {
-          await performDelete(p);
-        } catch {}
+      if (action.path.includes("|MULTI|")) {
+        const paths = action.path.split("|MULTI|");
+        await performMultiDelete(paths);
+      } else {
+        await performDelete(action.path);
       }
-      setSelectedFiles(new Set());
-      loadFiles();
       return;
     }
     if (action.type === "kill") {
@@ -1887,6 +1666,565 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
         6000,
       );
     }
+  };
+
+  // ===== Multi-Select Handler =====
+  const handleFileClick = (
+    e: React.MouseEvent,
+    item: FileItem,
+    index: number,
+  ) => {
+    // Don't handle if it was a context menu click
+    if (e.button === 2) return;
+
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Click: toggle individual selection
+      setSelectedFiles((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.path)) next.delete(item.path);
+        else next.add(item.path);
+        return next;
+      });
+      lastClickedIndexRef.current = index;
+    } else if (e.shiftKey && lastClickedIndexRef.current !== null) {
+      // Shift+Click: range select
+      const start = Math.min(lastClickedIndexRef.current, index);
+      const end = Math.max(lastClickedIndexRef.current, index);
+      const newSelected = new Set(selectedFiles);
+      for (let i = start; i <= end; i++) {
+        if (sortedFilteredFiles[i])
+          newSelected.add(sortedFilteredFiles[i].path);
+      }
+      setSelectedFiles(newSelected);
+    } else {
+      // Normal click: select only this one
+      setSelectedFiles(new Set([item.path]));
+      lastClickedIndexRef.current = index;
+    }
+  };
+
+  // ===== Context Menu =====
+  const handleContextMenu = (e: React.MouseEvent, item?: FileItem) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // If right-clicked on unselected item, select it
+    if (item && !selectedFiles.has(item.path)) {
+      setSelectedFiles(new Set([item.path]));
+    }
+
+    const selCount = item
+      ? Math.max(1, selectedFiles.size)
+      : selectedFiles.size;
+    const isZip =
+      item?.name?.endsWith(".zip") ||
+      item?.name?.endsWith(".tar.gz") ||
+      item?.name?.endsWith(".gz");
+    const menuItems: ContextMenuState extends null
+      ? never
+      : NonNullable<ContextMenuState>["items"] = [];
+
+    if (!item) {
+      // Clicked on empty space
+      menuItems.push(
+        {
+          label: "Paste",
+          icon: ClipboardPaste,
+          action: () => pasteClipboard(),
+          disabled: !clipboard,
+        },
+        {
+          label: "New Folder",
+          icon: FolderPlus,
+          action: () => handleCreateFolder(),
+        },
+        {
+          label: "Upload",
+          icon: Upload,
+          action: () => document.getElementById("file-upload-input")?.click(),
+        },
+        { label: "Refresh", icon: RefreshCw, action: () => loadFiles() },
+      );
+    } else if (selCount > 1) {
+      // Multi-select context menu
+      const selectedPaths = Array.from(selectedFiles);
+      menuItems.push(
+        {
+          label: `Copy (${selCount})`,
+          icon: Copy,
+          action: () => {
+            setClipboard({
+              action: "copy",
+              srcPath: selectedPaths[0],
+              name: `${selCount} items`,
+              type: "file",
+            });
+            showAlert("Copied", `${selCount} items ready to paste`);
+          },
+        },
+        {
+          label: `Zip (${selCount})`,
+          icon: Package,
+          action: () => handleZip(selectedPaths),
+        },
+        {
+          label: `Delete (${selCount})`,
+          icon: Trash2,
+          action: () => {
+            openConfirm(
+              { type: "delete", path: selectedPaths.join("|MULTI|") },
+              "Delete multiple items?",
+              `Permanently delete ${selCount} selected items?`,
+            );
+          },
+          danger: true,
+        },
+      );
+    } else if (item.type === "folder") {
+      menuItems.push(
+        { label: "Open", icon: FolderOpen, action: () => loadFiles(item.path) },
+        { label: "Copy", icon: Copy, action: () => copyToClipboard(item) },
+        {
+          label: "Cut",
+          icon: Scissors,
+          action: () => {
+            setClipboard({
+              action: "cut",
+              srcPath: item.path,
+              name: item.name,
+              type: "folder",
+            });
+            showAlert("Cut", `${item.name} ready to move`);
+          },
+        },
+        { label: "Rename", icon: Pencil, action: () => openRenameDialog(item) },
+        { label: "Zip", icon: Package, action: () => handleZip([item.path]) },
+        {
+          label: "Pin to tabs",
+          icon: Pin,
+          action: () => addPinnedFolder({ name: item.name, path: item.path }),
+        },
+        {
+          label: "Delete",
+          icon: Trash2,
+          action: () => handleDelete(item.path),
+          danger: true,
+        },
+      );
+    } else {
+      // File
+      menuItems.push(
+        { label: "Open", icon: Edit, action: () => openEditor(item.path) },
+        {
+          label: "Download",
+          icon: Download,
+          action: () => handleDownload(item.path, item.name),
+        },
+        { label: "Copy", icon: Copy, action: () => copyToClipboard(item) },
+        {
+          label: "Cut",
+          icon: Scissors,
+          action: () => {
+            setClipboard({
+              action: "cut",
+              srcPath: item.path,
+              name: item.name,
+              type: "file",
+            });
+            showAlert("Cut", `${item.name} ready to move`);
+          },
+        },
+        { label: "Rename", icon: Pencil, action: () => openRenameDialog(item) },
+        { label: "Zip", icon: Package, action: () => handleZip([item.path]) },
+      );
+      if (isZip) {
+        menuItems.push({
+          label: "Unzip here",
+          icon: PackageOpen,
+          action: () => handleUnzip(item.path),
+        });
+      }
+      menuItems.push({
+        label: "Delete",
+        icon: Trash2,
+        action: () => handleDelete(item.path),
+        danger: true,
+      });
+    }
+
+    setContextMenu({ x: e.clientX, y: e.clientY, items: menuItems });
+  };
+
+  // ===== Close context menu on click anywhere =====
+  useEffect(() => {
+    const handler = () => setContextMenu(null);
+    window.addEventListener("click", handler);
+    window.addEventListener("scroll", handler, true);
+    return () => {
+      window.removeEventListener("click", handler);
+      window.removeEventListener("scroll", handler, true);
+    };
+  }, []);
+
+  // ===== Zip =====
+  const handleZip = async (paths: string[]) => {
+    if (paths.length === 0) return;
+    try {
+      setLoading(true);
+      const firstName = paths[0].split("/").pop() || "archive";
+      const destPath =
+        paths.length === 1
+          ? `${paths[0]}.zip`
+          : `${currentPath}/${firstName}_and_more.zip`.replace("//", "/");
+
+      const res = await fetch(`${API_URL}/api/ssh/zip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          paths,
+          dest_path: destPath,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadFiles();
+        showAlert("Zipped", destPath.split("/").pop() || "archive.zip");
+        xtermPrint(`[ZIP] ${destPath}`);
+      } else {
+        showAlert(
+          "Zip failed",
+          data?.detail || "Unknown error",
+          "destructive",
+          5000,
+        );
+      }
+    } catch (err: any) {
+      showAlert(
+        "Zip failed",
+        err?.message || "Unknown error",
+        "destructive",
+        5000,
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== Unzip =====
+  const handleUnzip = async (zipPath: string) => {
+    try {
+      setLoading(true);
+      const destDir = zipPath.replace(/\.(zip|tar\.gz|gz)$/i, "");
+      const res = await fetch(`${API_URL}/api/ssh/unzip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: sessionId,
+          zip_path: zipPath,
+          dest_dir: destDir,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadFiles();
+        showAlert("Unzipped", destDir.split("/").pop() || "extracted");
+        xtermPrint(`[UNZIP] ${zipPath} -> ${destDir}`);
+      } else {
+        showAlert(
+          "Unzip failed",
+          data?.detail || "Unknown error",
+          "destructive",
+          5000,
+        );
+      }
+    } catch (err: any) {
+      showAlert(
+        "Unzip failed",
+        err?.message || "Unknown error",
+        "destructive",
+        5000,
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ===== Multi-delete support =====
+  const performMultiDelete = async (paths: string[]) => {
+    for (const p of paths) {
+      try {
+        await fetch(
+          `${API_URL}/api/ssh/delete?session_id=${sessionId}&path=${encodeURIComponent(p)}`,
+          { method: "DELETE" },
+        );
+      } catch {}
+    }
+    loadFiles();
+    setSelectedFiles(new Set());
+    showAlert("Deleted", `${paths.length} items deleted`);
+    xtermPrint(`[DELETE] ${paths.length} items`);
+  };
+
+  // ===== Sort Toggle =====
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  // ===== Sorted + Filtered Files (computed) =====
+  const sortedFilteredFiles = React.useMemo(() => {
+    let result = [...files];
+
+    // Filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((f) => f.name.toLowerCase().includes(q));
+    }
+
+    // Sort: folders always first
+    result.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+
+      let cmp = 0;
+      switch (sortField) {
+        case "name":
+          cmp = a.name.localeCompare(b.name, undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "size":
+          cmp = (a.size || 0) - (b.size || 0);
+          break;
+        case "modified":
+          cmp = (a.modified || "").localeCompare(b.modified || "");
+          break;
+        case "type": {
+          const extA = a.name.includes(".") ? a.name.split(".").pop()! : "";
+          const extB = b.name.includes(".") ? b.name.split(".").pop()! : "";
+          cmp = extA.localeCompare(extB);
+          break;
+        }
+      }
+      return sortOrder === "asc" ? cmp : -cmp;
+    });
+
+    return result;
+  }, [files, searchQuery, sortField, sortOrder]);
+
+  // ===== Status bar computations =====
+  const statusBarInfo = React.useMemo(() => {
+    const totalItems = sortedFilteredFiles.length;
+    const selCount = selectedFiles.size;
+    const totalSize = sortedFilteredFiles
+      .filter((f) => f.type === "file")
+      .reduce((acc, f) => acc + (f.size || 0), 0);
+    const selectedSize = sortedFilteredFiles
+      .filter((f) => selectedFiles.has(f.path) && f.type === "file")
+      .reduce((acc, f) => acc + (f.size || 0), 0);
+    return { totalItems, selCount, totalSize, selectedSize };
+  }, [sortedFilteredFiles, selectedFiles]);
+
+  // ===== Keyboard Shortcuts =====
+  useEffect(() => {
+    if (!connected || activeTab !== "files") return;
+
+    const handler = (e: KeyboardEvent) => {
+      // Skip if any dialog/modal is open or if typing in an input
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (confirmOpen || folderDialogOpen || renameDialogOpen || runModalOpen)
+        return;
+
+      // Ctrl+A: select all
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        setSelectedFiles(new Set(sortedFilteredFiles.map((f) => f.path)));
+        return;
+      }
+
+      // Ctrl+C: copy
+      if ((e.ctrlKey || e.metaKey) && e.key === "c") {
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) copyToClipboard(item);
+        }
+        return;
+      }
+
+      // Ctrl+X: cut
+      if ((e.ctrlKey || e.metaKey) && e.key === "x") {
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) {
+            setClipboard({
+              action: "cut",
+              srcPath: item.path,
+              name: item.name,
+              type: item.type,
+            });
+            showAlert("Cut", `${item.name} ready to move`);
+          }
+        }
+        return;
+      }
+
+      // Ctrl+V: paste
+      if ((e.ctrlKey || e.metaKey) && e.key === "v") {
+        if (clipboard) pasteClipboard();
+        return;
+      }
+
+      // Delete: delete selected
+      if (e.key === "Delete") {
+        if (selectedFiles.size > 0) {
+          const paths = Array.from(selectedFiles);
+          if (paths.length === 1) {
+            handleDelete(paths[0]);
+          } else {
+            openConfirm(
+              { type: "delete", path: paths.join("|MULTI|") },
+              "Delete multiple items?",
+              `Permanently delete ${paths.length} selected items?`,
+            );
+          }
+        }
+        return;
+      }
+
+      // F2: rename
+      if (e.key === "F2") {
+        e.preventDefault();
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) openRenameDialog(item);
+        }
+        return;
+      }
+
+      // Backspace: go up
+      if (e.key === "Backspace") {
+        e.preventDefault();
+        navigateUp();
+        return;
+      }
+
+      // Enter: open
+      if (e.key === "Enter") {
+        if (selectedFiles.size === 1) {
+          const item = files.find((f) => selectedFiles.has(f.path));
+          if (item) {
+            if (item.type === "folder") loadFiles(item.path);
+            else openEditor(item.path);
+          }
+        }
+        return;
+      }
+
+      // Escape: clear selection
+      if (e.key === "Escape") {
+        setSelectedFiles(new Set());
+        setContextMenu(null);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [
+    connected,
+    activeTab,
+    selectedFiles,
+    clipboard,
+    files,
+    sortedFilteredFiles,
+    confirmOpen,
+    folderDialogOpen,
+    renameDialogOpen,
+    runModalOpen,
+  ]);
+
+  // ===== Paste for cut (move) =====
+  const pasteClipboard = async () => {
+    if (!clipboard) return;
+
+    const baseName = clipboard.name;
+    const isCut = clipboard.action === "cut";
+
+    if (isCut) {
+      // Move
+      const destPath = `${currentPath}/${baseName}`.replace("//", "/");
+      try {
+        const res = await fetch(`${API_URL}/api/ssh/mv`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            src_path: clipboard.srcPath,
+            dest_path: destPath,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert("Moved", `${baseName} moved here`);
+          loadFiles();
+          setClipboard(null);
+          xtermPrint(`[MOVE] ${clipboard.srcPath} -> ${destPath}`);
+        } else {
+          showAlert(
+            "Move failed",
+            data?.detail || "Unknown error",
+            "destructive",
+          );
+        }
+      } catch (err) {
+        showAlert("Move failed", String(err), "destructive");
+      }
+    } else {
+      // Copy
+      const destPath = `${currentPath}/${baseName}-copy`.replace("//", "/");
+      try {
+        const res = await fetch(`${API_URL}/api/ssh/cp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            src_path: clipboard.srcPath,
+            dest_path: destPath,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          showAlert("Pasted", `${baseName} copied here`);
+          loadFiles();
+          setClipboard(null);
+          xtermPrint(`[COPY] ${clipboard.srcPath} -> ${destPath}`);
+        } else {
+          showAlert(
+            "Paste failed",
+            data?.detail || "Unknown error",
+            "destructive",
+          );
+        }
+      } catch (err) {
+        showAlert("Paste failed", String(err), "destructive");
+      }
+    }
+  };
+
+  // ===== Sort Icon Helper =====
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field)
+      return <ArrowUpDown size={12} className="opacity-30" />;
+    return sortOrder === "asc" ? (
+      <ArrowUp size={12} />
+    ) : (
+      <ArrowDown size={12} />
+    );
   };
 
   const formatUptime = (seconds: number) => {
@@ -2300,158 +2638,6 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ===== Right-Click Context Menu ===== */}
-      {contextMenu && (
-        <div
-          className={`fixed z-999 min-w-50 py-2 rounded-xl shadow-2xl border ${
-            darkMode
-              ? "bg-slate-800 border-slate-600"
-              : "bg-white border-slate-200"
-          }`}
-          style={{
-            left: Math.min(contextMenu.x, window.innerWidth - 220),
-            top: Math.min(contextMenu.y, window.innerHeight - 400),
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {contextMenu.item ? (
-            <>
-              {contextMenu.item.type === "folder" && (
-                <button
-                  onClick={() => {
-                    loadFiles(contextMenu.item!.path);
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Folder size={15} className="text-cyan-500" /> Open
-                </button>
-              )}
-              {contextMenu.item.type === "file" && (
-                <button
-                  onClick={() => {
-                    openEditor(contextMenu.item!.path);
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Edit size={15} className="text-cyan-500" /> Edit
-                </button>
-              )}
-              {contextMenu.item.type === "file" && (
-                <button
-                  onClick={() => {
-                    handleDownload(
-                      contextMenu.item!.path,
-                      contextMenu.item!.name,
-                    );
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Download size={15} className="text-cyan-500" /> Download
-                </button>
-              )}
-              {contextMenu.item.type === "file" &&
-                contextMenu.item.name.endsWith(".py") && (
-                  <button
-                    onClick={() => {
-                      openRunScriptModal(contextMenu.item!.path);
-                      setContextMenu(null);
-                    }}
-                    className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                  >
-                    <Play size={15} className="text-emerald-500" /> Run Script
-                  </button>
-                )}
-              <div
-                className={`my-1 border-t ${darkMode ? "border-slate-700" : "border-slate-100"}`}
-              />
-              <button
-                onClick={() => {
-                  copyToClipboard(contextMenu.item!);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <Copy size={15} /> Copy
-              </button>
-              <button
-                onClick={() => {
-                  openRenameDialog(contextMenu.item!);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <Pencil size={15} /> Rename
-              </button>
-              {contextMenu.item.type === "folder" && (
-                <button
-                  onClick={() => {
-                    addPinnedFolder({
-                      name: contextMenu.item!.name,
-                      path: contextMenu.item!.path,
-                    });
-                    setContextMenu(null);
-                    showAlert("Pinned", contextMenu.item!.name);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <Zap size={15} className="text-amber-500" /> Pin to Tabs
-                </button>
-              )}
-              <div
-                className={`my-1 border-t ${darkMode ? "border-slate-700" : "border-slate-100"}`}
-              />
-              <button
-                onClick={() => {
-                  if (selectedFiles.size > 1) handleMultiDelete();
-                  else handleDelete(contextMenu.item!.path);
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-red-500 ${darkMode ? "hover:bg-red-500/20" : "hover:bg-red-50"}`}
-              >
-                <Trash2 size={15} /> Delete
-                {selectedFiles.size > 1 ? ` (${selectedFiles.size})` : ""}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => {
-                  handleCreateFolder();
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <FolderPlus size={15} className="text-cyan-500" /> New Folder
-              </button>
-              {clipboard && (
-                <button
-                  onClick={() => {
-                    pasteClipboard();
-                    setContextMenu(null);
-                  }}
-                  className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-                >
-                  <ClipboardPaste size={15} className="text-emerald-500" />{" "}
-                  Paste
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  loadFiles();
-                  setContextMenu(null);
-                }}
-                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-3 ${darkMode ? "hover:bg-slate-700 text-slate-200" : "hover:bg-slate-50 text-slate-700"}`}
-              >
-                <RefreshCw size={15} /> Refresh
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
       {!connected ? (
         /* ===== LOGIN PAGE ===== */
         <div
@@ -2475,7 +2661,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
           </button>
 
           <div
-            className={`${themeClasses.card} border rounded-3xl shadow-2xl p-8 w-full max-w-lg relative z-10`}
+            className={`${themeClasses.card} border rounded-3xl shadow-2xl p-8 w-full max-w-4xl relative z-10`}
           >
             {/* Logo */}
             <div className="flex items-center justify-center mb-6">
@@ -2493,7 +2679,8 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               SSH Server Manager
             </h1>
             <p className={`text-center mb-8 ${themeClasses.textMuted}`}>
-              Secure connection to your Linux servers
+              🙃 Secure connection to your Linux servers Design by S!lent Ghost
+              🙂
             </p>
 
             {/* Saved Connections */}
@@ -2505,7 +2692,7 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                   <Shield size={14} />
                   Saved Connections
                 </h3>
-                <div className="grid grid-cols-2 gap-3 max-h-64">
+                <div className="grid grid-cols-3 gap-3 max-h-64 overflow-y-auto pr-4">
                   {savedConnections.map((conn) => (
                     <div
                       key={conn.id}
@@ -2977,86 +3164,126 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
               </div>
             )}
 
+            {/* ===== CONTEXT MENU ===== */}
+            {contextMenu && (
+              <div
+                className={`fixed z-9999 min-w-50 rounded-xl shadow-2xl border py-1.5 ${
+                  darkMode
+                    ? "bg-slate-800 border-slate-600"
+                    : "bg-white border-slate-200"
+                }`}
+                style={{
+                  left: Math.min(contextMenu.x, window.innerWidth - 220),
+                  top: Math.min(contextMenu.y, window.innerHeight - 300),
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {contextMenu.items.map((mi, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setContextMenu(null);
+                      mi.action();
+                    }}
+                    disabled={mi.disabled}
+                    className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                      mi.disabled
+                        ? `opacity-40 cursor-not-allowed`
+                        : mi.danger
+                          ? `text-red-500 ${darkMode ? "hover:bg-red-500/15" : "hover:bg-red-50"}`
+                          : `${themeClasses.text} ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-50"}`
+                    }`}
+                  >
+                    <mi.icon size={15} />
+                    {mi.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Hidden file input for context menu Upload action */}
+            <input
+              id="file-upload-input"
+              type="file"
+              multiple
+              onChange={handleUpload}
+              className="hidden"
+            />
+
             {/* ===== FILES TAB ===== */}
             {activeTab === "files" && (
               <div
                 className={`mt-6 ${themeClasses.cardSolid} rounded-2xl shadow-xl p-6 border relative`}
                 onDragOver={(e) => {
-                  if (
-                    e.dataTransfer.types.includes("application/x-ssh-folder") ||
-                    e.dataTransfer.types.includes("application/x-ssh-pinned")
-                  )
-                    return;
                   e.preventDefault();
-                  setDragOver(true);
+                  // Only trigger for external files (not pinned folder drags)
+                  if (e.dataTransfer.types.includes("Files")) {
+                    setDragOverUpload(true);
+                    e.dataTransfer.dropEffect = "copy";
+                  }
                 }}
                 onDragLeave={(e) => {
-                  if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                  setDragOver(false);
+                  // Only if leaving the container
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setDragOverUpload(false);
+                  }
                 }}
-                onDrop={handleFileDrop}
+                onDrop={handleDragDropUpload}
                 onContextMenu={(e) => {
+                  // Right-click on empty space (not on a file row)
                   const target = e.target as HTMLElement;
-                  if (!target.closest("[data-file-row]"))
-                    handleContextMenu(e, null);
+                  if (!target.closest("[data-file-row]")) {
+                    handleContextMenu(e);
+                  }
                 }}
               >
                 {/* Drag & Drop Overlay */}
-                {dragOver && (
+                {dragOverUpload && (
                   <div className="absolute inset-0 z-50 bg-cyan-500/10 border-2 border-dashed border-cyan-500 rounded-2xl flex items-center justify-center pointer-events-none">
                     <div className="text-center">
                       <Upload
                         size={48}
-                        className="mx-auto mb-2 text-cyan-500"
+                        className="text-cyan-500 mx-auto mb-3"
                       />
-                      <p
-                        className={`text-lg font-semibold ${themeClasses.text}`}
-                      >
+                      <p className="text-lg font-semibold text-cyan-600">
                         Drop files here to upload
+                      </p>
+                      <p className={`text-sm mt-1 ${themeClasses.textMuted}`}>
+                        Files will be uploaded to {currentPath}
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* Toolbar */}
-                <div className="flex justify-between items-center mb-4 gap-3">
-                  <div className="flex items-center gap-2 min-w-0">
+                {/* Toolbar: path + buttons */}
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={navigateUp}
-                      className={`p-2 rounded-xl transition-all ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
+                      className={`p-2 rounded-xl transition-all ${
+                        darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"
+                      }`}
                       title="Go up (Backspace)"
                     >
                       ↑
                     </button>
                     <span
-                      className={`font-mono text-sm ${themeClasses.textMuted} truncate`}
+                      className={`font-mono text-sm ${themeClasses.textMuted}`}
                     >
                       {currentPath}
                     </span>
                   </div>
-                  <div className="flex gap-2 items-center shrink-0">
-                    {/* Search Box */}
-                    <div className="relative">
-                      <Search
-                        size={14}
-                        className={`absolute left-3 top-1/2 -translate-y-1/2 ${themeClasses.textMuted}`}
-                      />
-                      <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Filter files..."
-                        className={`pl-8 pr-3 py-2 text-sm border rounded-xl w-44 transition-all focus:w-56 ${themeClasses.input}`}
-                      />
-                    </div>
+                  <div className="flex gap-2">
                     <button
                       onClick={handleCreateFolder}
                       className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-cyan-500 to-blue-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-cyan-500/25 hover:shadow-cyan-500/40 transition-all"
                     >
-                      <FolderPlus size={18} /> New Folder
+                      <FolderPlus size={18} />
+                      New Folder
                     </button>
                     <label className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-violet-500 to-purple-500 text-white rounded-xl cursor-pointer text-sm font-medium shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all">
-                      <Upload size={18} /> Upload
+                      <Upload size={18} />
+                      Upload
                       <input
                         type="file"
                         multiple
@@ -3073,257 +3300,183 @@ bash -lc 'mkdir -p "${safeOut}" && nohup python3 "${runScriptPath}" \
                           : `${darkMode ? "bg-slate-700 text-slate-500" : "bg-slate-200 text-slate-400"} cursor-not-allowed`
                       }`}
                     >
-                      <ClipboardPaste size={18} /> Paste
+                      <ClipboardPaste size={18} />
+                      Paste
                     </button>
-                    {selectedFiles.size > 1 && (
-                      <button
-                        onClick={handleMultiDelete}
-                        className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-red-500 to-rose-500 text-white rounded-xl text-sm font-medium shadow-lg shadow-red-500/25 hover:shadow-red-500/40 transition-all"
-                      >
-                        <Trash2 size={18} /> Delete ({selectedFiles.size})
-                      </button>
-                    )}
                     <button
                       onClick={() => loadFiles()}
-                      className={`p-2 border rounded-xl transition-all ${darkMode ? "border-slate-600 hover:bg-slate-700" : "border-slate-200 hover:bg-slate-50"}`}
+                      className={`p-2 border rounded-xl transition-all ${
+                        darkMode
+                          ? "border-slate-600 hover:bg-slate-700"
+                          : "border-slate-200 hover:bg-slate-50"
+                      }`}
                     >
                       <RefreshCw size={18} className={themeClasses.textMuted} />
                     </button>
                   </div>
                 </div>
 
-                {/* File List */}
-                <div
-                  className={`border rounded-xl overflow-hidden ${darkMode ? "border-slate-700" : "border-slate-200"}`}
-                >
-                  {/* Column Headers (Sortable) */}
+                {/* Search / Filter */}
+                <div className="mb-3">
                   <div
-                    className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold select-none border-b ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${themeClasses.input}`}
+                  >
+                    <Search size={16} className={themeClasses.textMuted} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Filter files..."
+                      className={`flex-1 bg-transparent outline-none text-sm ${themeClasses.text} placeholder:${themeClasses.textMuted}`}
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className={themeClasses.textMuted}
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* File Table with Sort Headers */}
+                <div
+                  className={`border rounded-xl overflow-hidden ${
+                    darkMode ? "border-slate-700" : "border-slate-200"
+                  }`}
+                >
+                  {/* Column Headers */}
+                  <div
+                    className={`grid grid-cols-[1fr_100px_170px] gap-0 text-xs font-semibold select-none ${
                       darkMode
-                        ? "bg-slate-700/50 border-slate-700 text-slate-400"
-                        : "bg-slate-50 border-slate-200 text-slate-500"
+                        ? "bg-slate-700/50 text-slate-300"
+                        : "bg-slate-50 text-slate-500"
                     }`}
                   >
-                    <div className="w-6" />
                     <button
                       onClick={() => toggleSort("name")}
-                      className="flex-1 text-left hover:text-cyan-500 transition-colors cursor-pointer"
+                      className={`flex items-center gap-1.5 px-4 py-2.5 text-left transition-colors ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
                     >
-                      Name{sortArrow("name")}
+                      Name <SortIcon field="name" />
                     </button>
                     <button
                       onClick={() => toggleSort("size")}
-                      className="w-24 text-right hover:text-cyan-500 transition-colors cursor-pointer"
+                      className={`flex items-center gap-1.5 px-2 py-2.5 text-left transition-colors ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
                     >
-                      Size{sortArrow("size")}
+                      Size <SortIcon field="size" />
                     </button>
                     <button
                       onClick={() => toggleSort("modified")}
-                      className="w-44 text-right hover:text-cyan-500 transition-colors cursor-pointer"
+                      className={`flex items-center gap-1.5 px-2 py-2.5 text-left transition-colors ${darkMode ? "hover:bg-slate-700" : "hover:bg-slate-100"}`}
                     >
-                      Modified{sortArrow("modified")}
+                      Modified <SortIcon field="modified" />
                     </button>
-                    <div className="w-32" />
                   </div>
 
                   {/* File Rows */}
-                  <div className="max-h-96 overflow-y-auto">
-                    {filteredSortedFiles.length === 0 ? (
+                  <div className="max-h-105 overflow-y-auto">
+                    {sortedFilteredFiles.length === 0 ? (
                       <div
                         className={`p-8 text-center ${themeClasses.textMuted}`}
                       >
                         {searchQuery ? "No matching files" : "No files found"}
                       </div>
                     ) : (
-                      filteredSortedFiles.map((item) => (
-                        <div
-                          key={item.path}
-                          data-file-row
-                          onClick={(e) => handleFileClick(item, e)}
-                          onDoubleClick={() => {
-                            if (item.type === "folder") loadFiles(item.path);
-                            else openEditor(item.path);
-                          }}
-                          onContextMenu={(e) => handleContextMenu(e, item)}
-                          className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer group transition-colors ${
-                            selectedFiles.has(item.path)
-                              ? darkMode
-                                ? "bg-cyan-500/15 border-l-2 border-l-cyan-500"
-                                : "bg-cyan-50 border-l-2 border-l-cyan-500"
-                              : darkMode
-                                ? "hover:bg-slate-700/50 border-l-2 border-l-transparent"
-                                : "hover:bg-slate-50 border-l-2 border-l-transparent"
-                          }`}
-                          draggable={item.type === "folder"}
-                          onDragStart={(e) => {
-                            if (item.type !== "folder") return;
-                            e.dataTransfer.setData(
-                              "application/x-ssh-folder",
-                              JSON.stringify({
-                                name: item.name,
-                                path: item.path,
-                              }),
-                            );
-                            e.dataTransfer.effectAllowed = "copy";
-                          }}
-                        >
-                          {item.type === "folder" ? (
-                            <Folder
-                              size={18}
-                              className="text-cyan-500 shrink-0"
-                            />
-                          ) : (
-                            <File
-                              size={18}
-                              className={`${themeClasses.textMuted} shrink-0`}
-                            />
-                          )}
-
-                          <span
-                            className={`flex-1 text-sm truncate ${themeClasses.text}`}
+                      sortedFilteredFiles.map((item, idx) => {
+                        const isSelected = selectedFiles.has(item.path);
+                        return (
+                          <div
+                            key={item.path}
+                            data-file-row="true"
+                            onClick={(e) => handleFileClick(e, item, idx)}
+                            onDoubleClick={() => {
+                              if (item.type === "folder") loadFiles(item.path);
+                              else openEditor(item.path);
+                            }}
+                            onContextMenu={(e) => handleContextMenu(e, item)}
+                            className={`grid grid-cols-[1fr_100px_170px] gap-0 items-center cursor-pointer transition-colors border-t ${
+                              isSelected
+                                ? darkMode
+                                  ? "bg-cyan-500/15 border-cyan-500/30"
+                                  : "bg-cyan-50 border-cyan-200"
+                                : darkMode
+                                  ? "border-slate-700/50 hover:bg-slate-700/30"
+                                  : "border-slate-100 hover:bg-slate-50"
+                            }`}
+                            draggable={item.type === "folder"}
+                            onDragStart={(e) => {
+                              if (item.type !== "folder") return;
+                              e.dataTransfer.setData(
+                                "application/x-ssh-folder",
+                                JSON.stringify({
+                                  name: item.name,
+                                  path: item.path,
+                                }),
+                              );
+                              e.dataTransfer.effectAllowed = "copy";
+                            }}
                           >
-                            {item.name}
-                          </span>
-
-                          <span
-                            className={`text-xs w-24 text-right shrink-0 ${themeClasses.textMuted}`}
-                          >
-                            {item.sizeStr}
-                          </span>
-                          <span
-                            className={`text-xs w-44 text-right shrink-0 ${themeClasses.textMuted}`}
-                          >
-                            {item.modified}
-                          </span>
-
-                          <div className="w-32 flex justify-end opacity-0 group-hover:opacity-100 gap-1 transition-opacity shrink-0">
-                            {item.type === "file" && (
-                              <>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openEditor(item.path);
-                                  }}
-                                  className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                                  title="Edit"
-                                >
-                                  <Edit
-                                    size={14}
-                                    className={themeClasses.textMuted}
-                                  />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDownload(item.path, item.name);
-                                  }}
-                                  className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                                  title="Download"
-                                >
-                                  <Download
-                                    size={14}
-                                    className={themeClasses.textMuted}
-                                  />
-                                </button>
-                              </>
-                            )}
-                            {item.type === "folder" && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  loadFiles(item.path);
-                                }}
-                                className={`p-1.5 rounded-lg text-cyan-500 transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                              >
-                                <ChevronRight size={14} />
-                              </button>
-                            )}
-                            {item.type === "file" &&
-                              item.name.endsWith(".py") && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openRunScriptModal(item.path);
-                                  }}
-                                  className={`p-1.5 rounded-lg text-emerald-500 transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                                  title="Run"
-                                >
-                                  <Play size={14} />
-                                </button>
+                            <div className="flex items-center gap-2.5 px-4 py-2.5 min-w-0">
+                              {item.type === "folder" ? (
+                                <Folder
+                                  size={17}
+                                  className="text-cyan-500 shrink-0"
+                                />
+                              ) : (
+                                <File
+                                  size={17}
+                                  className={`${themeClasses.textMuted} shrink-0`}
+                                />
                               )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRenameDialog(item);
-                              }}
-                              className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                              title="Rename (F2)"
+                              <span
+                                className={`text-sm truncate ${themeClasses.text}`}
+                              >
+                                {item.name}
+                              </span>
+                            </div>
+                            <span
+                              className={`text-xs px-2 ${themeClasses.textMuted}`}
                             >
-                              <Pencil
-                                size={14}
-                                className={themeClasses.textMuted}
-                              />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                copyToClipboard(item);
-                              }}
-                              className={`p-1.5 rounded-lg transition-colors ${darkMode ? "hover:bg-slate-600" : "hover:bg-slate-200"}`}
-                              title="Copy (Ctrl+C)"
+                              {item.sizeStr}
+                            </span>
+                            <span
+                              className={`text-xs px-2 ${themeClasses.textMuted}`}
                             >
-                              <Copy
-                                size={14}
-                                className={themeClasses.textMuted}
-                              />
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDelete(item.path);
-                              }}
-                              className={`p-1.5 rounded-lg text-red-500 transition-colors ${darkMode ? "hover:bg-red-500/20" : "hover:bg-red-50"}`}
-                              title="Delete (Del)"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                              {item.modified}
+                            </span>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
 
                 {/* Status Bar */}
                 <div
-                  className={`flex items-center justify-between mt-3 px-1 text-xs ${themeClasses.textMuted}`}
+                  className={`mt-3 flex items-center justify-between text-xs px-1 ${themeClasses.textMuted}`}
                 >
                   <div className="flex items-center gap-4">
                     <span>
-                      {filteredSortedFiles.length} items
-                      {searchQuery ? ` (filtered from ${files.length})` : ""}
+                      {statusBarInfo.totalItems} item
+                      {statusBarInfo.totalItems !== 1 ? "s" : ""}
                     </span>
-                    {selectedFiles.size > 0 && (
+                    {statusBarInfo.selCount > 0 && (
                       <span className="text-cyan-500 font-medium">
-                        {selectedFiles.size} selected
-                      </span>
-                    )}
-                    {selectedFiles.size > 0 && (
-                      <span>
-                        {formatBytes(
-                          files
-                            .filter((f) => selectedFiles.has(f.path))
-                            .reduce((sum, f) => sum + (f.size || 0), 0),
-                        )}
+                        {statusBarInfo.selCount} selected
+                        {statusBarInfo.selectedSize > 0 &&
+                          ` (${formatBytes(statusBarInfo.selectedSize)})`}
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 opacity-60">
-                    <span>Ctrl+A: Select All</span>
-                    <span>Del: Delete</span>
-                    <span>F2: Rename</span>
-                    <span>Right-click: Menu</span>
-                    <span>Drop files to upload</span>
+                  <div className="flex items-center gap-3">
+                    <span>Total: {formatBytes(statusBarInfo.totalSize)}</span>
+                    {clipboard && (
+                      <span className="text-emerald-500 font-medium">
+                        {clipboard.action === "cut" ? "✂" : "📋"}{" "}
+                        {clipboard.name}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
