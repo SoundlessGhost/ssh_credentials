@@ -2,7 +2,12 @@
 
 import { create } from "zustand";
 
-export type ViewMode = "list" | "grid";
+export type ViewMode =
+  | "details"
+  | "list"
+  | "small-icons"
+  | "medium-icons"
+  | "large-icons";
 
 type UiFiltersState = {
   searchQuery: string;
@@ -13,7 +18,7 @@ type UiFiltersState = {
 
 export const useUiFilters = create<UiFiltersState>((set) => ({
   searchQuery: "",
-  viewMode: "list",
+  viewMode: "details",
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setViewMode: (viewMode) => set({ viewMode }),
 }));

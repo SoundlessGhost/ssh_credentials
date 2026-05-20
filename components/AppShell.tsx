@@ -221,8 +221,7 @@ export function AppShell({
 
           <Separator orientation="vertical" className="mx-1 hidden h-6 md:block" />
 
-          {/* Grid view button removed until grid mode ships (Phase 4.5).
-              List view is the only mode so no toggle needed yet. */}
+          <ViewModeDropdown viewMode={viewMode} setViewMode={setViewMode} />
 
           <ThemeToggle />
           <UserMenu />
@@ -243,7 +242,7 @@ export function AppShell({
           <ResizablePanelGroup
             orientation="vertical"
             className="flex-1"
-            key={`vstack-${terminalOpen ? "open" : "closed"}`}
+            key={`vstack-${terminalOpen ? "open" : "closed"}-${terminalMaximized ? "max" : "norm"}`}
           >
             <ResizablePanel
               defaultSize={
@@ -261,7 +260,7 @@ export function AppShell({
               <>
                 <ResizableHandle
                   withHandle
-                  className="h-1.5 bg-border transition-colors hover:bg-primary/40 data-[resize-handle-state=drag]:bg-primary"
+                  className="!h-2 cursor-ns-resize bg-border transition-colors hover:bg-primary/40 active:bg-primary data-[resize-handle-state=drag]:bg-primary"
                 />
                 <ResizablePanel
                   defaultSize={terminalMaximized ? 95 : 45}
@@ -393,6 +392,80 @@ export function AppShell({
         </div>
       )}
     </div>
+  );
+}
+
+type ViewModeValue =
+  | "details"
+  | "list"
+  | "small-icons"
+  | "medium-icons"
+  | "large-icons";
+
+const VIEW_MODE_OPTIONS: { value: ViewModeValue; label: string; icon: React.ReactNode }[] = [
+  { value: "large-icons", label: "Extra large icons", icon: <LayoutGrid className="h-3.5 w-3.5" /> },
+  { value: "medium-icons", label: "Medium icons", icon: <LayoutGrid className="h-3 w-3" /> },
+  { value: "small-icons", label: "Small icons", icon: <LayoutGrid className="h-3 w-3" /> },
+  { value: "list", label: "List", icon: <ListIcon className="h-3.5 w-3.5" /> },
+  { value: "details", label: "Details", icon: <ListIcon className="h-3.5 w-3.5" /> },
+];
+
+function ViewModeDropdown({
+  viewMode,
+  setViewMode,
+}: {
+  viewMode: ViewModeValue;
+  setViewMode: (m: ViewModeValue) => void;
+}) {
+  const current = VIEW_MODE_OPTIONS.find((o) => o.value === viewMode) ?? VIEW_MODE_OPTIONS[4];
+  // Icon shown in trigger reflects current mode.
+  const triggerIcon =
+    viewMode === "details" || viewMode === "list" ? (
+      <ListIcon className="h-4 w-4" />
+    ) : (
+      <LayoutGrid className="h-4 w-4" />
+    );
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`View: ${current.label}`}
+            >
+              {triggerIcon}
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>View: {current.label}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          View
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {VIEW_MODE_OPTIONS.map((opt) => {
+          const active = opt.value === viewMode;
+          return (
+            <DropdownMenuItem
+              key={opt.value}
+              onSelect={() => setViewMode(opt.value)}
+              className={active ? "bg-accent text-accent-foreground" : ""}
+            >
+              {opt.icon}
+              <span className="ml-2">{opt.label}</span>
+              {active && (
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  •
+                </span>
+              )}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
