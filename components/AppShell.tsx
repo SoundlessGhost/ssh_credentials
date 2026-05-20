@@ -203,28 +203,18 @@ export function AppShell({
       </header>
 
       {/* ===== Body (sidebar + main) =====
-          autoSaveId persists user drags to localStorage; minSize raised
-          so the sidebar can't be dragged into nothing. The vertical group
-          is keyed by terminalOpen so toggling actually re-applies sizes
-          (defaultSize only takes effect at mount). */}
-      <ResizablePanelGroup
-        orientation="horizontal"
-        className="flex-1 overflow-hidden"
-      >
-        <ResizablePanel
-          defaultSize={24}
-          minSize={22}
-          maxSize={40}
-          className="bg-sidebar text-sidebar-foreground"
-        >
+          Plain flex layout — no more ResizablePanel for sidebar. v4 was
+          collapsing below minSize unpredictably. Fixed-width sidebar
+          (resizable handle for it can come back as Phase 4.5 polish).
+          Vertical resize for terminal stays. */}
+      <div className="flex flex-1 overflow-hidden">
+        <aside className="w-64 shrink-0 border-r bg-sidebar text-sidebar-foreground">
           {sidebar}
-        </ResizablePanel>
-
-        <ResizableHandle withHandle />
-
-        <ResizablePanel defaultSize={76}>
+        </aside>
+        <div className="flex flex-1 flex-col overflow-hidden">
           <ResizablePanelGroup
             orientation="vertical"
+            className="flex-1"
             key={`vstack-${terminalOpen ? "open" : "closed"}`}
           >
             <ResizablePanel defaultSize={terminalOpen ? 65 : 100} minSize={30}>
@@ -262,8 +252,8 @@ export function AppShell({
               </>
             )}
           </ResizablePanelGroup>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </div>
+      </div>
 
       {/* ===== Status bar ===== */}
       <footer className="flex h-7 shrink-0 items-center gap-3 border-t bg-card px-3 text-[11px] text-muted-foreground">
