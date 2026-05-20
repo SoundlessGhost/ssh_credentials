@@ -16,6 +16,7 @@ import {
   EmptyAreaContextMenu,
   FileContextMenu,
 } from "@/features/files/FileContextMenu";
+import { useFileActions } from "@/features/files/useFileActions";
 import { useQueryClient } from "@tanstack/react-query";
 
 const ROW_HEIGHT = 32;
@@ -54,6 +55,7 @@ export function FileList({
 
   const { data, isLoading, isFetching, error } = useFiles(sessionId, currentPath);
   const items = useMemo<FileItem[]>(() => data?.items ?? [], [data]);
+  const actions = useFileActions(items);
 
   // Sorting (folders first always)
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -148,26 +150,71 @@ export function FileList({
     (e: React.KeyboardEvent) => {
       if (sortedItemsForKeyboard.length === 0) return;
       const ctrl = e.ctrlKey || e.metaKey;
+      const alt = e.altKey;
+      const shift = e.shiftKey;
+      const key = e.key;
+      const keyLower = key.toLowerCase();
 
-      if (ctrl && e.key.toLowerCase() === "a") {
+      // ===== File-operation shortcuts (Windows Explorer parity) =====
+      if (ctrl && shift && keyLower === "c") {
+        e.preventDefault();
+        actions.copyPath();
+        return;
+      }
+      if (ctrl && keyLower === "a") {
         e.preventDefault();
         setSelected(new Set(sortedItemsForKeyboard.map((x) => x.path)));
         return;
       }
+      if (ctrl && keyLower === "c") {
+        e.preventDefault();
+        actions.copy();
+        return;
+      }
+      if (ctrl && keyLower === "x") {
+        e.preventDefault();
+        actions.cut();
+        return;
+      }
+      if (ctrl && keyLower === "v") {
+        e.preventDefault();
+        if (actions.hasClipboard) actions.paste();
+        return;
+      }
+      if (key === "F2" && actions.isSingle) {
+        e.preventDefault();
+        actions.triggerRename();
+        return;
+      }
+      if (key === "Delete" && actions.hasSelection) {
+        e.preventDefault();
+        actions.triggerDelete();
+        return;
+      }
+      if (alt && key === "Enter" && actions.isSingle) {
+        e.preventDefault();
+        actions.triggerProperties();
+        return;
+      }
+      if (key === "F5") {
+        e.preventDefault();
+        refresh();
+        return;
+      }
 
-      if (e.key === "Escape") {
+      if (key === "Escape") {
         setSelected(new Set());
         setActiveIdx(-1);
         return;
       }
 
-      if (e.key === "Backspace") {
+      if (key === "Backspace") {
         e.preventDefault();
         goUp();
         return;
       }
 
-      if (e.key === "Enter") {
+      if (key === "Enter") {
         if (activeIdx >= 0) {
           e.preventDefault();
           openItem(sortedItemsForKeyboard[activeIdx]);
@@ -205,7 +252,16 @@ export function FileList({
         moveTo(sortedItemsForKeyboard.length - 1);
       }
     },
-    [sortedItemsForKeyboard, activeIdx, openItem, goUp, virtualizer, setSelected],
+    [
+      sortedItemsForKeyboard,
+      activeIdx,
+      openItem,
+      goUp,
+      virtualizer,
+      setSelected,
+      actions,
+      refresh,
+    ],
   );
 
   // ===== Drag & drop =====

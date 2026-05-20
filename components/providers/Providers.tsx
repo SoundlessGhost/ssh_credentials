@@ -32,7 +32,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={200}>
           <ErrorBoundary>{children}</ErrorBoundary>
-          <Toaster position="bottom-right" richColors closeButton />
+          <Toaster
+            position="bottom-right"
+            richColors
+            closeButton
+            offset={{ right: "0", bottom: "44px" }}
+          />
         </TooltipProvider>
       </QueryClientProvider>
     </ThemeProvider>

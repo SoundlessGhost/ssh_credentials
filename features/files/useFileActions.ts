@@ -25,6 +25,33 @@ function joinPath(dir: string, name: string): string {
   return `${dir.replace(/\/+$/, "")}/${name}`.replace(/\/+/g, "/");
 }
 
+/** Split "file.tar.gz" -> ["file", ".tar.gz"]; "noext" -> ["noext", ""]. */
+function splitNameExt(name: string): [string, string] {
+  const knownDouble = [".tar.gz", ".tar.bz2", ".tar.xz"];
+  const lower = name.toLowerCase();
+  for (const d of knownDouble) {
+    if (lower.endsWith(d)) {
+      return [name.slice(0, -d.length), name.slice(-d.length)];
+    }
+  }
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0) return [name, ""];
+  return [name.slice(0, dot), name.slice(dot)];
+}
+
+/** "foo.txt" + existing ["foo.txt"] -> "foo - Copy.txt".
+ * Cascades to " - Copy (2).txt" if collision continues. */
+function uniqueCopyName(name: string, existing: Set<string>): string {
+  const [base, ext] = splitNameExt(name);
+  let candidate = `${base} - Copy${ext}`;
+  if (!existing.has(candidate)) return candidate;
+  for (let i = 2; i < 1000; i++) {
+    candidate = `${base} - Copy (${i})${ext}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+  return `${base} - Copy ${Date.now()}${ext}`;
+}
+
 export function useFileActions(items: FileItem[]) {
   const sessionId = useConnection((s) => s.sessionId);
   const currentPath = useConnection((s) => s.currentPath);
@@ -77,9 +104,23 @@ export function useFileActions(items: FileItem[]) {
     if (!sessionId || !hasClipboard || !clipboard.mode) return;
     const endpoint =
       clipboard.mode === "cut" ? endpoints.ssh.move : endpoints.ssh.copy;
+
+    // Pasting a copy in the source dir = Windows-style " - Copy" rename.
+    // Track names we've already allocated this round so two collisions get
+    // distinct " - Copy (2)", " - Copy (3)" suffixes.
+    const sameDir = clipboard.sourcePath === currentPath;
+    const existingNames = new Set(items.map((i) => i.name));
+
     let failures = 0;
+    let renamed = 0;
     for (const src of clipboard.paths) {
-      const dest = joinPath(currentPath, basename(src));
+      let destName = basename(src);
+      if (clipboard.mode === "copy" && sameDir) {
+        destName = uniqueCopyName(destName, existingNames);
+        existingNames.add(destName);
+        renamed++;
+      }
+      const dest = joinPath(currentPath, destName);
       if (dest === src) {
         failures++;
         continue;
@@ -105,9 +146,10 @@ export function useFileActions(items: FileItem[]) {
     }
     if (clipboard.mode === "cut") clipboard.clear();
     if (failures === 0) {
-      toast.success(`Pasted ${clipboard.paths.length} item(s)`);
+      const suffix = renamed > 0 ? " ( - Copy suffix added)" : "";
+      toast.success(`Pasted ${clipboard.paths.length} item(s)${suffix}`);
     }
-  }, [sessionId, hasClipboard, clipboard, currentPath, invalidate]);
+  }, [sessionId, hasClipboard, clipboard, currentPath, invalidate, items]);
 
   const download = useCallback(() => {
     if (!sessionId || !isSingle) return;

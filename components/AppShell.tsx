@@ -181,8 +181,10 @@ export function AppShell({
           <Breadcrumbs />
         </div>
 
-        {/* Right cluster */}
-        <div className="ml-auto flex items-center gap-1">
+        {/* Right cluster — consistent 1.5x icon-button gap from search input
+            to the user-menu, no separator interruptions. UserMenu stays
+            anchored as the rightmost item. */}
+        <div className="ml-auto flex items-center gap-1.5">
           <div className="relative hidden md:block">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -218,8 +220,6 @@ export function AppShell({
             </TooltipTrigger>
             <TooltipContent>Refresh (F5)</TooltipContent>
           </Tooltip>
-
-          <Separator orientation="vertical" className="mx-1 hidden h-6 md:block" />
 
           <ViewModeDropdown viewMode={viewMode} setViewMode={setViewMode} />
 
