@@ -81,7 +81,7 @@ export function ActionRibbon({ onUploadClick }: Props) {
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b bg-card px-2 py-1">
+    <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b bg-card px-2 py-1 [&::-webkit-scrollbar]:h-1">
       <Button
         size="sm"
         variant="ghost"

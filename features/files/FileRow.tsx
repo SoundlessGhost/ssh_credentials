@@ -28,7 +28,7 @@ export const FileRow = React.memo(function FileRow({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
-      className={`grid h-8 cursor-default select-none grid-cols-[28px_minmax(0,1fr)_90px_150px_110px] items-center gap-2 px-3 text-xs ${
+      className={`grid h-8 cursor-default select-none grid-cols-[28px_minmax(0,1fr)_70px] items-center gap-2 px-3 text-xs md:grid-cols-[28px_minmax(0,1fr)_90px_150px_110px] ${
         selected
           ? "bg-primary/10 text-foreground"
           : "hover:bg-accent/60"
@@ -41,8 +41,10 @@ export const FileRow = React.memo(function FileRow({
       <span className="text-right tabular-nums text-muted-foreground">
         {item.sizeStr}
       </span>
-      <span className="truncate text-muted-foreground">{item.modified}</span>
-      <span className="truncate font-mono text-[10px] text-muted-foreground">
+      <span className="hidden truncate text-muted-foreground md:block">
+        {item.modified}
+      </span>
+      <span className="hidden truncate font-mono text-[10px] text-muted-foreground md:block">
         {item.permissions}
       </span>
     </div>

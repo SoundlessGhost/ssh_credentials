@@ -270,7 +270,7 @@ export function FileList({
       onDrop={handleDrop}
     >
       {/* Column header */}
-      <div className="grid shrink-0 grid-cols-[28px_minmax(0,1fr)_90px_150px_110px] items-center gap-2 border-b bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="grid shrink-0 grid-cols-[28px_minmax(0,1fr)_70px] items-center gap-2 border-b bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground md:grid-cols-[28px_minmax(0,1fr)_90px_150px_110px]">
         <span />
         <SortHeader
           label="Name"
@@ -285,13 +285,15 @@ export function FileList({
           dir={sortDir}
           onClick={() => toggleSort("size", sortKey, sortDir, setSortKey, setSortDir)}
         />
-        <SortHeader
-          label="Modified"
-          active={sortKey === "modified"}
-          dir={sortDir}
-          onClick={() => toggleSort("modified", sortKey, sortDir, setSortKey, setSortDir)}
-        />
-        <span>Permissions</span>
+        <span className="hidden md:block">
+          <SortHeader
+            label="Modified"
+            active={sortKey === "modified"}
+            dir={sortDir}
+            onClick={() => toggleSort("modified", sortKey, sortDir, setSortKey, setSortDir)}
+          />
+        </span>
+        <span className="hidden md:block">Permissions</span>
       </div>
 
       {/* Virtualized rows */}

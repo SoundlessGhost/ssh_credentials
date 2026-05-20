@@ -13,6 +13,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   LogOut,
+  Menu,
   RefreshCw,
   Search,
   Server,
@@ -40,6 +41,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   ResizableHandle,
@@ -70,6 +78,7 @@ export function AppShell({
   statusBarExtra,
 }: AppShellProps) {
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const sessionId = useConnection((s) => s.sessionId);
   const currentPath = useConnection((s) => s.currentPath);
@@ -97,12 +106,34 @@ export function AppShell({
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       {/* ===== Top header bar ===== */}
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        <div className="flex items-center gap-2 pr-2">
-          <Server className="h-5 w-5 text-primary" />
+      <header className="flex h-12 shrink-0 items-center gap-1 border-b bg-card px-2 md:gap-2 md:px-3">
+        {/* Mobile hamburger — opens sidebar as Sheet */}
+        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              aria-label="Open sidebar"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-72 bg-sidebar p-0">
+            <SheetHeader className="border-b px-4 py-3">
+              <SheetTitle className="flex items-center gap-2 text-sm">
+                <Server className="h-4 w-4 text-primary" /> VPS Manager
+              </SheetTitle>
+            </SheetHeader>
+            <div className="h-[calc(100%-3rem)]">{sidebar}</div>
+          </SheetContent>
+        </Sheet>
+
+        <div className="flex items-center gap-2 pr-1 md:pr-2">
+          <Server className="hidden h-5 w-5 text-primary md:block" />
           <span className="text-sm font-semibold">VPS Manager</span>
         </div>
-        <Separator orientation="vertical" className="h-6" />
+        <Separator orientation="vertical" className="hidden h-6 md:block" />
 
         {/* Nav buttons */}
         <NavButton
@@ -208,7 +239,8 @@ export function AppShell({
           (resizable handle for it can come back as Phase 4.5 polish).
           Vertical resize for terminal stays. */}
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 shrink-0 border-r bg-sidebar text-sidebar-foreground">
+        {/* Desktop sidebar — hidden on small screens (use Sheet via hamburger) */}
+        <aside className="hidden w-64 shrink-0 border-r bg-sidebar text-sidebar-foreground md:block">
           {sidebar}
         </aside>
         <div className="flex flex-1 flex-col overflow-hidden">
@@ -256,25 +288,32 @@ export function AppShell({
       </div>
 
       {/* ===== Status bar ===== */}
-      <footer className="flex h-7 shrink-0 items-center gap-3 border-t bg-card px-3 text-[11px] text-muted-foreground">
+      <footer className="flex h-9 shrink-0 items-center gap-2 border-t bg-card px-2 text-xs text-muted-foreground md:gap-3 md:px-3">
         <button
           type="button"
           onClick={() => setTerminalOpen((v) => !v)}
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent hover:text-accent-foreground"
+          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${
+            terminalOpen ? "bg-accent text-accent-foreground" : ""
+          }`}
         >
-          <TerminalIcon className="h-3 w-3" />
-          Terminal
+          <TerminalIcon className="h-3.5 w-3.5" />
+          <span>Terminal</span>
           {terminalOpen ? (
             <ChevronDown className="h-3 w-3" />
           ) : (
             <ChevronUp className="h-3 w-3" />
           )}
         </button>
-        <Separator orientation="vertical" className="h-3" />
+        <Separator orientation="vertical" className="h-4" />
         {connected ? (
           <span className="flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {hostname ?? "Connected"}
+            <span className="relative inline-flex h-1.5 w-1.5">
+              <span className="absolute h-1.5 w-1.5 animate-ping rounded-full bg-emerald-500/40" />
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            <span className="truncate max-w-[120px] md:max-w-none">
+              {hostname ?? "Connected"}
+            </span>
           </span>
         ) : (
           <span className="flex items-center gap-1.5">
@@ -284,13 +323,13 @@ export function AppShell({
         )}
         {os && (
           <>
-            <Separator orientation="vertical" className="h-3" />
-            <span>{os}</span>
+            <Separator orientation="vertical" className="hidden h-4 md:block" />
+            <span className="hidden truncate md:inline">{os}</span>
           </>
         )}
         <div className="ml-auto flex items-center gap-2">
           {statusBarExtra}
-          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
             v0.4 · live
           </Badge>
         </div>
