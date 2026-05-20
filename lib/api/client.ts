@@ -104,14 +104,19 @@ export async function api<T = unknown>(
     if (ok) {
       return api<T>(path, { ...init, _skipRefresh: true });
     }
-    // Refresh failed — purge session storage so the layout gate redirects.
+    // Refresh failed — silent logout. Purge session storage so the gate
+    // redirects, navigate to /login, and return a never-resolving promise
+    // so the caller (and any React component bound to it) never sees an
+    // error banner during the navigation window.
     if (typeof window !== "undefined") {
       try {
         sessionStorage.removeItem("vps-mgr.connection");
       } catch {}
     }
     redirectToLogin();
-    throw new ApiError("Not authenticated", 401, null);
+    return new Promise<T>(() => {
+      /* never resolves — page is navigating */
+    });
   }
 
   const text = await res.text();

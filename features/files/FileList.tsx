@@ -10,6 +10,7 @@ import { useConnection } from "@/stores/connection";
 import { useFileSelection } from "@/stores/fileSelection";
 import { useUiFilters } from "@/stores/uiFilters";
 import { useFileDialogs } from "@/stores/fileDialogs";
+import { useTerminalUi } from "@/stores/terminalUi";
 import { FileRow } from "@/features/files/FileRow";
 import {
   EmptyAreaContextMenu,
@@ -42,6 +43,8 @@ export function FileList({
   const selected = useFileSelection((s) => s.selected);
   const setSelectedStore = useFileSelection((s) => s.setSelected);
   const openEditor = useFileDialogs((s) => s.openEditor);
+  const setTerminalOpen = useTerminalUi((s) => s.setOpen);
+  const openTerminal = useCallback(() => setTerminalOpen(true), [setTerminalOpen]);
 
   const qc = useQueryClient();
   const refresh = useCallback(() => {
@@ -260,6 +263,7 @@ export function FileList({
       onUploadClick={onUploadClick}
       onRefresh={refresh}
       onNewFolder={onNewFolderClick}
+      onOpenTerminal={openTerminal}
     >
     <div
       className="relative flex h-full flex-col outline-none"
@@ -331,6 +335,7 @@ export function FileList({
                     onOpen={openItem}
                     onUploadClick={onUploadClick}
                     onRefresh={refresh}
+                    onOpenTerminal={openTerminal}
                   >
                     <div>
                       <FileRow

@@ -2,13 +2,16 @@
 
 import React, { useState } from "react";
 import {
+  Folder,
   Loader2,
   Pencil,
+  Pin,
   Plus,
   Power,
   Server,
   Star,
   Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +46,7 @@ import {
 } from "@/hooks/useServers";
 import { useConnection } from "@/stores/connection";
 import { useHostKeyConfirm } from "@/stores/hostKeyConfirm";
+import { useQuickAccess } from "@/stores/quickAccess";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
 
 export function ServerSidebar() {
@@ -147,21 +151,7 @@ export function ServerSidebar() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="px-3 pt-3">
-        <div className="flex items-center justify-between px-1 pb-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Quick Access
-          </div>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
-            Soon
-          </span>
-        </div>
-        <div className="rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
-          <Star className="mr-1.5 inline h-3 w-3" />
-          Pin remote folders here for one-click access. Lands Phase 4.5.
-        </div>
-      </div>
-
+      <QuickAccessSection />
       <Separator className="my-3" />
 
       <div className="flex items-center justify-between px-3 pb-1.5">
@@ -312,6 +302,62 @@ export function ServerSidebar() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </div>
+  );
+}
+
+function QuickAccessSection() {
+  const serverId = useConnection((s) => s.serverId);
+  const navigate = useConnection((s) => s.navigate);
+  const sessionId = useConnection((s) => s.sessionId);
+  const pins = useQuickAccess((s) => s.pins).filter(
+    (p) => p.serverId === serverId,
+  );
+  const unpin = useQuickAccess((s) => s.unpin);
+
+  return (
+    <div className="px-3 pt-3">
+      <div className="flex items-center justify-between px-1 pb-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Quick Access
+        </div>
+        {pins.length > 0 && (
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+            {pins.length}
+          </span>
+        )}
+      </div>
+      {pins.length === 0 ? (
+        <div className="rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
+          <Star className="mr-1.5 inline h-3 w-3" />
+          Right-click any folder → Pin to Quick Access.
+        </div>
+      ) : (
+        <ul className="space-y-0.5">
+          {pins.map((p) => (
+            <li key={p.path} className="group flex items-center gap-1">
+              <button
+                type="button"
+                disabled={!sessionId}
+                onClick={() => navigate(p.path)}
+                className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs hover:bg-sidebar-accent disabled:opacity-50"
+                title={p.path}
+              >
+                <Folder className="h-3 w-3 shrink-0 text-amber-500" />
+                <span className="truncate">{p.name}</span>
+              </button>
+              <button
+                type="button"
+                aria-label={`Unpin ${p.name}`}
+                onClick={() => unpin(p.serverId, p.path)}
+                className="rounded p-1 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

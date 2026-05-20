@@ -9,6 +9,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { env } from "@/lib/env";
 import { endpoints } from "@/lib/api/endpoints";
 import { useConnection } from "@/stores/connection";
+import { useTerminalCommand } from "@/stores/terminalCommand";
 
 type Status = "idle" | "connecting" | "open" | "closed" | "error";
 
@@ -143,6 +144,18 @@ export function TerminalImpl() {
     ws.onopen = () => {
       setStatus("open");
       term.clear();
+      // Drain any queued command from "Open in Terminal" right-click.
+      const pending = useTerminalCommand.getState().consume();
+      if (pending) {
+        // Small delay so the remote shell prompt is ready first.
+        setTimeout(() => {
+          try {
+            ws.send(pending);
+          } catch {
+            // ignore
+          }
+        }, 250);
+      }
     };
     ws.onmessage = (e) => {
       term.write(typeof e.data === "string" ? e.data : "");
@@ -163,8 +176,24 @@ export function TerminalImpl() {
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
     });
 
+    // Subscribe to terminal command queue so a later "Open in Terminal"
+    // (after WS already open) still flows in.
+    const unsubCmd = useTerminalCommand.subscribe((state, prev) => {
+      if (state.pending && state.pending !== prev.pending) {
+        const cmd = useTerminalCommand.getState().consume();
+        if (cmd && ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(cmd);
+          } catch {
+            // ignore
+          }
+        }
+      }
+    });
+
     return () => {
       dataDisp.dispose();
+      unsubCmd();
       try {
         ws.close();
       } catch {

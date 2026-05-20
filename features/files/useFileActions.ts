@@ -11,7 +11,12 @@ import { useConnection } from "@/stores/connection";
 import { useClipboard } from "@/stores/clipboard";
 import { useFileSelection } from "@/stores/fileSelection";
 import { useFileDialogs } from "@/stores/fileDialogs";
+import { useQuickAccess } from "@/stores/quickAccess";
+import { useTerminalCommand } from "@/stores/terminalCommand";
+import { useTerminalUi } from "@/stores/terminalUi";
 import type { FileItem } from "@/hooks/useFiles";
+
+export type CompressFormat = "zip" | "tar.gz" | "7z";
 
 function basename(p: string): string {
   return p.replace(/\/+$/, "").split("/").pop() ?? p;
@@ -23,11 +28,15 @@ function joinPath(dir: string, name: string): string {
 export function useFileActions(items: FileItem[]) {
   const sessionId = useConnection((s) => s.sessionId);
   const currentPath = useConnection((s) => s.currentPath);
+  const serverId = useConnection((s) => s.serverId);
   const selected = useFileSelection((s) => s.selected);
   const clearSelection = useFileSelection((s) => s.clear);
   const clipboard = useClipboard();
   const dialogs = useFileDialogs();
   const qc = useQueryClient();
+  const quickAccess = useQuickAccess();
+  const enqueueTerminal = useTerminalCommand((s) => s.enqueue);
+  const setTerminalOpen = useTerminalUi((s) => s.setOpen);
 
   const selectedItems = items.filter((i) => selected.has(i.path));
   const hasSelection = selectedItems.length > 0;
@@ -258,6 +267,100 @@ export function useFileActions(items: FileItem[]) {
     [sessionId, currentPath, invalidate],
   );
 
+  // ===== Windows-style extras =====
+
+  /** Copy item path(s) to clipboard. Ctrl+Shift+C in Windows Explorer. */
+  const copyPath = useCallback(async () => {
+    if (!hasSelection) return;
+    const text = selectedItems.map((i) => i.path).join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(
+        isSingle ? "Path copied" : `Copied ${selectedItems.length} paths`,
+      );
+    } catch {
+      toast.error("Clipboard blocked by browser");
+    }
+  }, [hasSelection, isSingle, selectedItems]);
+
+  /** Compress with a specific archive format (no dialog, default name). */
+  const compressTo = useCallback(
+    async (targets: FileItem[], format: CompressFormat) => {
+      if (!sessionId || targets.length === 0) return;
+      const baseName =
+        targets.length === 1 ? targets[0].name : "archive";
+      const ext = format === "tar.gz" ? "tar.gz" : format;
+      const destName = `${baseName}.${ext}`;
+      const dest = joinPath(currentPath, destName);
+      try {
+        const res = await api<{ path: string; format: string }>(
+          endpoints.ssh.zip,
+          {
+            method: "POST",
+            json: {
+              session_id: sessionId,
+              paths: targets.map((t) => t.path),
+              dest_path: dest,
+            },
+          },
+        );
+        toast.success(`Created ${res.path}`);
+        invalidate();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Compress failed";
+        toast.error(msg);
+      }
+    },
+    [sessionId, currentPath, invalidate],
+  );
+
+  /** Queue `cd <path>` into the terminal; caller is responsible for
+   * opening the terminal panel (FileContextMenu wires both). */
+  const openInTerminal = useCallback(
+    (item: FileItem) => {
+      if (item.type !== "folder") return;
+      enqueueTerminal(`cd ${quoteShellArg(item.path)}\n`);
+      setTerminalOpen(true);
+      toast.message(`Switched terminal to ${item.path}`);
+    },
+    [enqueueTerminal, setTerminalOpen],
+  );
+
+  /** Pin / unpin folder for the sidebar Quick Access section. */
+  const togglePin = useCallback(
+    (item: FileItem) => {
+      if (item.type !== "folder") return;
+      if (quickAccess.isPinned(serverId, item.path)) {
+        quickAccess.unpin(serverId, item.path);
+        toast.message(`Unpinned ${item.name}`);
+      } else {
+        quickAccess.pin({
+          serverId,
+          path: item.path,
+          name: item.name,
+          pinnedAt: Date.now(),
+        });
+        toast.success(`Pinned ${item.name}`);
+      }
+    },
+    [quickAccess, serverId],
+  );
+
+  const isPinned = useCallback(
+    (path: string) => quickAccess.isPinned(serverId, path),
+    [quickAccess, serverId],
+  );
+
+  /** Open Properties dialog for a single item. */
+  const triggerProperties = useCallback(
+    (item?: FileItem) => {
+      const target = item ?? (isSingle ? selectedItems[0] : null);
+      if (!target) return;
+      dialogs.openProperties(target);
+    },
+    [isSingle, selectedItems, dialogs],
+  );
+
   return {
     selectedItems,
     hasSelection,
@@ -272,9 +375,20 @@ export function useFileActions(items: FileItem[]) {
     triggerRename,
     triggerDelete,
     triggerCompress,
+    triggerProperties,
     performRename,
     performDelete,
     performCompress,
     extract,
+    copyPath,
+    compressTo,
+    openInTerminal,
+    togglePin,
+    isPinned,
   };
+}
+
+function quoteShellArg(s: string): string {
+  // POSIX-safe single-quote wrap, embedded single quotes escaped.
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }

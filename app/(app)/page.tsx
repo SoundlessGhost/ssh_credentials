@@ -15,6 +15,7 @@ import { RenameDialog } from "@/features/files/RenameDialog";
 import { DeleteConfirm } from "@/features/files/DeleteConfirm";
 import { CompressDialog } from "@/features/files/CompressDialog";
 import { EditorDialog } from "@/features/files/EditorDialog";
+import { PropertiesDialog } from "@/features/files/PropertiesDialog";
 import { useFileActions } from "@/features/files/useFileActions";
 import { UploadTray } from "@/features/upload/UploadTray";
 import {
@@ -37,6 +38,7 @@ function FileDialogsMount() {
       <DeleteConfirm onDelete={actions.performDelete} />
       <CompressDialog onCompress={actions.performCompress} />
       <EditorDialog />
+      <PropertiesDialog />
     </>
   );
 }

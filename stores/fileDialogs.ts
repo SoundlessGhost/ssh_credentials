@@ -10,6 +10,7 @@ type FileDialogsState = {
   deleteTargets: FileItem[];
   compressTargets: FileItem[];
   editorTarget: FileItem | null;
+  propertiesTarget: FileItem | null;
 
   openRename: (item: FileItem) => void;
   closeRename: () => void;
@@ -22,6 +23,9 @@ type FileDialogsState = {
 
   openEditor: (item: FileItem) => void;
   closeEditor: () => void;
+
+  openProperties: (item: FileItem) => void;
+  closeProperties: () => void;
 };
 
 export const useFileDialogs = create<FileDialogsState>((set) => ({
@@ -41,4 +45,8 @@ export const useFileDialogs = create<FileDialogsState>((set) => ({
   editorTarget: null,
   openEditor: (editorTarget) => set({ editorTarget }),
   closeEditor: () => set({ editorTarget: null }),
+
+  propertiesTarget: null,
+  openProperties: (propertiesTarget) => set({ propertiesTarget }),
+  closeProperties: () => set({ propertiesTarget: null }),
 }));

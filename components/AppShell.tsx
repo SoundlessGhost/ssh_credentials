@@ -13,7 +13,9 @@ import {
   LayoutGrid,
   List as ListIcon,
   LogOut,
+  Maximize2,
   Menu,
+  Minimize2,
   RefreshCw,
   Search,
   Server,
@@ -58,6 +60,7 @@ import {
 import { Breadcrumbs } from "@/features/files/Breadcrumbs";
 import { useConnection } from "@/stores/connection";
 import { useUiFilters } from "@/stores/uiFilters";
+import { useTerminalUi } from "@/stores/terminalUi";
 import { useLogout, useMe } from "@/hooks/useAuth";
 
 type AppShellProps = {
@@ -77,7 +80,12 @@ export function AppShell({
   uploadTray,
   statusBarExtra,
 }: AppShellProps) {
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const terminalOpen = useTerminalUi((s) => s.open);
+  const setTerminalOpen = useTerminalUi((s) => s.setOpen);
+  const toggleTerminal = useTerminalUi((s) => s.toggle);
+  const terminalMaximized = useTerminalUi((s) => s.maximized);
+  const toggleMaximize = useTerminalUi((s) => s.toggleMaximize);
+  const setMaximized = useTerminalUi((s) => s.setMaximized);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // VS-Code-style Ctrl+` (backtick) toggles the terminal panel.
@@ -86,12 +94,12 @@ export function AppShell({
       const isCtrl = e.ctrlKey || e.metaKey;
       if (isCtrl && e.key === "`") {
         e.preventDefault();
-        setTerminalOpen((v) => !v);
+        toggleTerminal();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [toggleTerminal]);
 
   const sessionId = useConnection((s) => s.sessionId);
   const currentPath = useConnection((s) => s.currentPath);
@@ -238,8 +246,10 @@ export function AppShell({
             key={`vstack-${terminalOpen ? "open" : "closed"}`}
           >
             <ResizablePanel
-              defaultSize={terminalOpen ? 55 : 100}
-              minSize={20}
+              defaultSize={
+                terminalOpen ? (terminalMaximized ? 5 : 55) : 100
+              }
+              minSize={5}
             >
               <div className="flex h-full flex-col overflow-hidden">
                 {actionBar}
@@ -253,22 +263,62 @@ export function AppShell({
                   withHandle
                   className="h-1.5 bg-border transition-colors hover:bg-primary/40 data-[resize-handle-state=drag]:bg-primary"
                 />
-                <ResizablePanel defaultSize={45} minSize={15} maxSize={80}>
+                <ResizablePanel
+                  defaultSize={terminalMaximized ? 95 : 45}
+                  minSize={15}
+                  maxSize={95}
+                >
                   <section className="flex h-full flex-col border-t bg-card">
                     <div className="flex h-9 items-center justify-between border-b px-2">
                       <div className="flex items-center gap-2 text-xs font-medium">
                         <TerminalIcon className="h-3.5 w-3.5" />
                         Terminal
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => setTerminalOpen(false)}
-                        aria-label="Collapse terminal"
-                      >
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={toggleMaximize}
+                              aria-label={
+                                terminalMaximized
+                                  ? "Restore terminal"
+                                  : "Maximize terminal"
+                              }
+                            >
+                              {terminalMaximized ? (
+                                <Minimize2 className="h-3.5 w-3.5" />
+                              ) : (
+                                <Maximize2 className="h-3.5 w-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {terminalMaximized
+                              ? "Restore"
+                              : "Maximize (fill main pane)"}
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => {
+                                setMaximized(false);
+                                setTerminalOpen(false);
+                              }}
+                              aria-label="Close terminal"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Close terminal</TooltipContent>
+                        </Tooltip>
+                      </div>
                     </div>
                     <div className="flex-1 overflow-hidden">
                       {terminal ?? <TerminalPlaceholder />}
@@ -287,7 +337,7 @@ export function AppShell({
           <TooltipTrigger asChild>
             <button
               type="button"
-              onClick={() => setTerminalOpen((v) => !v)}
+              onClick={toggleTerminal}
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${
                 terminalOpen ? "bg-accent text-accent-foreground" : ""
               }`}
