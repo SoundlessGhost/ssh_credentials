@@ -212,9 +212,8 @@ export function AppShell({
         className="flex-1 overflow-hidden"
       >
         <ResizablePanel
-          id="sidebar"
-          defaultSize={22}
-          minSize={20}
+          defaultSize={24}
+          minSize={22}
           maxSize={40}
           className="bg-sidebar text-sidebar-foreground"
         >
@@ -223,7 +222,7 @@ export function AppShell({
 
         <ResizableHandle withHandle />
 
-        <ResizablePanel id="main" defaultSize={78}>
+        <ResizablePanel defaultSize={76}>
           <ResizablePanelGroup
             orientation="vertical"
             key={`vstack-${terminalOpen ? "open" : "closed"}`}
@@ -302,7 +301,7 @@ export function AppShell({
         <div className="ml-auto flex items-center gap-2">
           {statusBarExtra}
           <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-            v0.2 · phase 2
+            v0.4 · live
           </Badge>
         </div>
       </footer>

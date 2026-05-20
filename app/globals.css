@@ -129,6 +129,17 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+  /* Every clickable button gets pointer; disabled gets not-allowed.
+     Shadcn Button already opts in via class, this catches everything else
+     (file rows, breadcrumbs, drag handles, etc). */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 /* ===== SSH Manager Custom Styles ===== */
