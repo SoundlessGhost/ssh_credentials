@@ -12,6 +12,7 @@ import { useUiFilters } from "@/stores/uiFilters";
 import { useFileDialogs } from "@/stores/fileDialogs";
 import { useTerminalUi } from "@/stores/terminalUi";
 import { FileRow } from "@/features/files/FileRow";
+import { FileGrid } from "@/features/files/FileGrid";
 import {
   EmptyAreaContextMenu,
   FileContextMenu,
@@ -41,11 +42,16 @@ export function FileList({
   const navigate = useConnection((s) => s.navigate);
   const goUp = useConnection((s) => s.goUp);
   const searchQuery = useUiFilters((s) => s.searchQuery);
+  const viewMode = useUiFilters((s) => s.viewMode);
   const selected = useFileSelection((s) => s.selected);
   const setSelectedStore = useFileSelection((s) => s.setSelected);
   const openEditor = useFileDialogs((s) => s.openEditor);
   const setTerminalOpen = useTerminalUi((s) => s.setOpen);
   const openTerminal = useCallback(() => setTerminalOpen(true), [setTerminalOpen]);
+  const isIconMode =
+    viewMode === "small-icons" ||
+    viewMode === "medium-icons" ||
+    viewMode === "large-icons";
 
   const qc = useQueryClient();
   const refresh = useCallback(() => {
@@ -83,6 +89,19 @@ export function FileList({
   // Active row index + anchor for keyboard nav (selection set lives in Zustand)
   const [activeIdx, setActiveIdx] = useState<number>(-1);
   const anchorIdxRef = useRef<number>(-1);
+
+  // Rubber-band (marquee) selection. Tracks pointer-down position and
+  // current cursor; while dragging, computes the row-index range overlap
+  // and replaces selection. Holding Ctrl/Cmd merges with previous.
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [marquee, setMarquee] = useState<{
+    startX: number;
+    startY: number;
+    curX: number;
+    curY: number;
+    additive: boolean;
+    baseSelection: Set<string>;
+  } | null>(null);
 
   // Local mutator that also pushes into the shared store
   const setSelected = useCallback(
@@ -357,12 +376,92 @@ export function FileList({
       </div>
 
       {/* Virtualized rows */}
-      <div ref={parentRef} className="flex-1 overflow-auto">
+      <div
+        ref={parentRef}
+        className="relative flex-1 overflow-auto"
+        onMouseDown={(e) => {
+          // Rubber-band start only when clicking on the empty scroll area
+          // itself (not a row). Left-button only.
+          if (e.button !== 0) return;
+          if (e.target !== e.currentTarget) {
+            // Click on row — let the row handler manage selection.
+            return;
+          }
+          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+          const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+          setMarquee({
+            startX: e.clientX - rect.left,
+            startY: e.clientY - rect.top + e.currentTarget.scrollTop,
+            curX: e.clientX - rect.left,
+            curY: e.clientY - rect.top + e.currentTarget.scrollTop,
+            additive,
+            baseSelection: additive ? new Set(selected) : new Set(),
+          });
+          if (!additive) {
+            setSelected(new Set());
+            setActiveIdx(-1);
+          }
+        }}
+        onMouseMove={(e) => {
+          if (!marquee) return;
+          const el = parentRef.current;
+          if (!el) return;
+          const rect = el.getBoundingClientRect();
+          const curX = e.clientX - rect.left;
+          const curY = e.clientY - rect.top + el.scrollTop;
+          const top = Math.min(marquee.startY, curY);
+          const bottom = Math.max(marquee.startY, curY);
+          const startIdx = Math.max(0, Math.floor(top / ROW_HEIGHT));
+          const endIdx = Math.min(
+            sortedItemsForKeyboard.length - 1,
+            Math.floor(bottom / ROW_HEIGHT),
+          );
+          const next = new Set(marquee.baseSelection);
+          for (let i = startIdx; i <= endIdx; i++) {
+            const it = sortedItemsForKeyboard[i];
+            if (it) next.add(it.path);
+          }
+          setSelected(next);
+          setMarquee({ ...marquee, curX, curY });
+        }}
+        onMouseUp={() => setMarquee(null)}
+        onMouseLeave={() => setMarquee(null)}
+      >
         {sortedItems.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-12 text-muted-foreground">
             <FolderOpen className="h-8 w-8 opacity-40" />
             <div className="text-xs">Empty folder</div>
           </div>
+        ) : isIconMode ? (
+          <FileGrid
+            items={sortedItemsForKeyboard}
+            mode={viewMode as "small-icons" | "medium-icons" | "large-icons"}
+            selectedPaths={selected}
+            activeIdx={activeIdx}
+            onItemClick={(idx, e) => handleRowClick(idx, e)}
+            onItemDoubleClick={(item) => openItem(item)}
+            onItemContextMenu={(idx) => {
+              const item = sortedItemsForKeyboard[idx];
+              if (!item) return;
+              if (!selected.has(item.path)) {
+                setSelected(new Set([item.path]));
+                setActiveIdx(idx);
+                anchorIdxRef.current = idx;
+              }
+            }}
+            renderRowMenu={(item, idx, children) => (
+              <FileContextMenu
+                items={sortedItemsForKeyboard}
+                rowItem={item}
+                onOpen={openItem}
+                onUploadClick={onUploadClick}
+                onRefresh={refresh}
+                onOpenTerminal={openTerminal}
+              >
+                <div>{children}</div>
+              </FileContextMenu>
+            )}
+          />
         ) : (
           <div
             style={{
@@ -371,6 +470,18 @@ export function FileList({
               position: "relative",
             }}
           >
+            {/* Marquee rectangle */}
+            {marquee && (
+              <div
+                className="pointer-events-none absolute z-10 border border-primary/60 bg-primary/10"
+                style={{
+                  left: Math.min(marquee.startX, marquee.curX),
+                  top: Math.min(marquee.startY, marquee.curY),
+                  width: Math.abs(marquee.curX - marquee.startX),
+                  height: Math.abs(marquee.curY - marquee.startY),
+                }}
+              />
+            )}
             {virtualizer.getVirtualItems().map((v) => {
               const item = sortedItemsForKeyboard[v.index];
               return (

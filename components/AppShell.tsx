@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  Activity,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
@@ -61,6 +62,8 @@ import { Breadcrumbs } from "@/features/files/Breadcrumbs";
 import { useConnection } from "@/stores/connection";
 import { useUiFilters } from "@/stores/uiFilters";
 import { useTerminalUi } from "@/stores/terminalUi";
+import { useMonitorUi } from "@/stores/monitorUi";
+import { useSystemInfo } from "@/hooks/useSystem";
 import { useLogout, useMe } from "@/hooks/useAuth";
 
 type AppShellProps = {
@@ -221,6 +224,8 @@ export function AppShell({
             <TooltipContent>Refresh (F5)</TooltipContent>
           </Tooltip>
 
+          <MonitorButton />
+
           <ViewModeDropdown viewMode={viewMode} setViewMode={setViewMode} />
 
           <ThemeToggle />
@@ -376,6 +381,7 @@ export function AppShell({
           </>
         )}
         <div className="ml-auto flex items-center gap-2">
+          <MonitorStatusInline />
           {statusBarExtra}
           <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
             v0.4 · live
@@ -383,10 +389,10 @@ export function AppShell({
         </div>
       </footer>
 
-      {/* Floating upload tray slot (step 10) */}
+      {/* Floating upload tray — flush against right edge, just above status bar */}
       {uploadTray && (
         <div className="pointer-events-none absolute inset-0">
-          <div className="pointer-events-auto absolute bottom-10 right-4">
+          <div className="pointer-events-auto absolute bottom-10 right-0">
             {uploadTray}
           </div>
         </div>
@@ -466,6 +472,63 @@ function ViewModeDropdown({
         })}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+function MonitorButton() {
+  const sessionId = useConnection((s) => s.sessionId);
+  const setOpen = useMonitorUi((s) => s.setOpen);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="System monitor"
+          disabled={!sessionId}
+          onClick={() => setOpen(true)}
+        >
+          <Activity className="h-4 w-4" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>System monitor</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Compact CPU/Mem/Disk readout in the status bar. */
+function MonitorStatusInline() {
+  const sessionId = useConnection((s) => s.sessionId);
+  const { data } = useSystemInfo(sessionId, !!sessionId);
+  const setOpen = useMonitorUi((s) => s.setOpen);
+  if (!sessionId || !data?.data) return null;
+  const i = data.data;
+  return (
+    <button
+      type="button"
+      onClick={() => setOpen(true)}
+      className="hidden items-center gap-2 rounded px-1.5 py-0.5 text-[11px] hover:bg-accent hover:text-accent-foreground md:flex"
+      title="Open system monitor"
+    >
+      <span className="flex items-center gap-1">
+        <span className="text-muted-foreground">CPU</span>
+        <span className={`tabular-nums ${i.cpuPercent >= 80 ? "text-red-500" : ""}`}>
+          {i.cpuPercent.toFixed(0)}%
+        </span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="text-muted-foreground">MEM</span>
+        <span className={`tabular-nums ${i.memory.percent >= 80 ? "text-red-500" : ""}`}>
+          {i.memory.percent.toFixed(0)}%
+        </span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="text-muted-foreground">DISK</span>
+        <span className={`tabular-nums ${i.disk.percent >= 80 ? "text-red-500" : ""}`}>
+          {i.disk.percent.toFixed(0)}%
+        </span>
+      </span>
+    </button>
   );
 }
 

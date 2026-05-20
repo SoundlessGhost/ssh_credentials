@@ -24,6 +24,7 @@ import {
 } from "@/features/upload/uploadManager";
 import { Terminal } from "@/features/terminal/Terminal";
 import { HostKeyConfirmDialog } from "@/features/connection/HostKeyConfirmDialog";
+import { MonitorDialog } from "@/features/monitor/MonitorDialog";
 
 function FileDialogsMount() {
   const sessionId = useConnection((s) => s.sessionId);
@@ -122,6 +123,7 @@ export default function Home() {
 
       <FileDialogsMount />
       <HostKeyConfirmDialog />
+      <MonitorDialog />
     </>
   );
 }
