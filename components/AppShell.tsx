@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -79,6 +79,19 @@ export function AppShell({
 }: AppShellProps) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+
+  // VS-Code-style Ctrl+` (backtick) toggles the terminal panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const isCtrl = e.ctrlKey || e.metaKey;
+      if (isCtrl && e.key === "`") {
+        e.preventDefault();
+        setTerminalOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const sessionId = useConnection((s) => s.sessionId);
   const currentPath = useConnection((s) => s.currentPath);
@@ -224,7 +237,10 @@ export function AppShell({
             className="flex-1"
             key={`vstack-${terminalOpen ? "open" : "closed"}`}
           >
-            <ResizablePanel defaultSize={terminalOpen ? 65 : 100} minSize={30}>
+            <ResizablePanel
+              defaultSize={terminalOpen ? 55 : 100}
+              minSize={20}
+            >
               <div className="flex h-full flex-col overflow-hidden">
                 {actionBar}
                 <main className="flex-1 overflow-hidden">{filePane}</main>
@@ -233,8 +249,11 @@ export function AppShell({
 
             {terminalOpen && (
               <>
-                <ResizableHandle withHandle />
-                <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
+                <ResizableHandle
+                  withHandle
+                  className="h-1.5 bg-border transition-colors hover:bg-primary/40 data-[resize-handle-state=drag]:bg-primary"
+                />
+                <ResizablePanel defaultSize={45} minSize={15} maxSize={80}>
                   <section className="flex h-full flex-col border-t bg-card">
                     <div className="flex h-9 items-center justify-between border-b px-2">
                       <div className="flex items-center gap-2 text-xs font-medium">
@@ -264,21 +283,26 @@ export function AppShell({
 
       {/* ===== Status bar ===== */}
       <footer className="flex h-9 shrink-0 items-center gap-2 border-t bg-card px-2 text-xs text-muted-foreground md:gap-3 md:px-3">
-        <button
-          type="button"
-          onClick={() => setTerminalOpen((v) => !v)}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${
-            terminalOpen ? "bg-accent text-accent-foreground" : ""
-          }`}
-        >
-          <TerminalIcon className="h-3.5 w-3.5" />
-          <span>Terminal</span>
-          {terminalOpen ? (
-            <ChevronDown className="h-3 w-3" />
-          ) : (
-            <ChevronUp className="h-3 w-3" />
-          )}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => setTerminalOpen((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground ${
+                terminalOpen ? "bg-accent text-accent-foreground" : ""
+              }`}
+            >
+              <TerminalIcon className="h-3.5 w-3.5" />
+              <span>Terminal</span>
+              {terminalOpen ? (
+                <ChevronDown className="h-3 w-3" />
+              ) : (
+                <ChevronUp className="h-3 w-3" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Toggle terminal (Ctrl+`)</TooltipContent>
+        </Tooltip>
         <Separator orientation="vertical" className="h-4" />
         {connected ? (
           <span className="flex items-center gap-1.5">
