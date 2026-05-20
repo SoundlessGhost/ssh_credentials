@@ -148,12 +148,17 @@ export function ServerSidebar() {
   return (
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3">
-        <div className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Quick Access
+        <div className="flex items-center justify-between px-1 pb-1">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Quick Access
+          </div>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+            Soon
+          </span>
         </div>
-        <div className="rounded-md bg-muted/40 px-2 py-1.5 text-xs text-muted-foreground">
+        <div className="rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
           <Star className="mr-1.5 inline h-3 w-3" />
-          Pin folders for quick access
+          Pin remote folders here for one-click access. Lands Phase 4.5.
         </div>
       </div>
 

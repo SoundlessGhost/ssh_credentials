@@ -198,35 +198,10 @@ export function AppShell({
             <TooltipContent>Refresh (F5)</TooltipContent>
           </Tooltip>
 
-          <Separator orientation="vertical" className="mx-1 h-6" />
+          <Separator orientation="vertical" className="mx-1 hidden h-6 md:block" />
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={viewMode === "list" ? "secondary" : "ghost"}
-                size="icon"
-                aria-label="List view"
-                onClick={() => setViewMode("list")}
-              >
-                <ListIcon className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>List view</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={viewMode === "grid" ? "secondary" : "ghost"}
-                size="icon"
-                aria-label="Grid view"
-                onClick={() => setViewMode("grid")}
-                disabled
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Grid view (Phase 2 later)</TooltipContent>
-          </Tooltip>
+          {/* Grid view button removed until grid mode ships (Phase 4.5).
+              List view is the only mode so no toggle needed yet. */}
 
           <ThemeToggle />
           <UserMenu />
@@ -259,7 +234,7 @@ export function AppShell({
             {terminalOpen && (
               <>
                 <ResizableHandle withHandle />
-                <ResizablePanel defaultSize={35} minSize={15} maxSize={70}>
+                <ResizablePanel defaultSize={50} minSize={20} maxSize={80}>
                   <section className="flex h-full flex-col border-t bg-card">
                     <div className="flex h-9 items-center justify-between border-b px-2">
                       <div className="flex items-center gap-2 text-xs font-medium">

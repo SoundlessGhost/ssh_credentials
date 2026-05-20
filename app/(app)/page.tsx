@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useConnection } from "@/stores/connection";
 import { useFiles } from "@/hooks/useFiles";
@@ -16,7 +17,10 @@ import { CompressDialog } from "@/features/files/CompressDialog";
 import { EditorDialog } from "@/features/files/EditorDialog";
 import { useFileActions } from "@/features/files/useFileActions";
 import { UploadTray } from "@/features/upload/UploadTray";
-import { uploadManager } from "@/features/upload/uploadManager";
+import {
+  setUploadQueryClient,
+  uploadManager,
+} from "@/features/upload/uploadManager";
 import { Terminal } from "@/features/terminal/Terminal";
 import { HostKeyConfirmDialog } from "@/features/connection/HostKeyConfirmDialog";
 
@@ -49,6 +53,13 @@ export default function Home() {
   const sessionId = useConnection((s) => s.sessionId);
   const currentPath = useConnection((s) => s.currentPath);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  // Let the upload manager (outside React) invalidate the file list query
+  // the moment a tus upload completes — no need to wait for SFTP polling.
+  useEffect(() => {
+    setUploadQueryClient(qc);
+  }, [qc]);
 
   const handleFiles = (files: File[]) => {
     if (!sessionId) {

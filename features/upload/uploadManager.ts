@@ -3,6 +3,7 @@
 // so they survive re-renders and route navigation.
 
 import * as tus from "tus-js-client";
+import type { QueryClient } from "@tanstack/react-query";
 
 import { env } from "@/lib/env";
 import { endpoints } from "@/lib/api/endpoints";
@@ -11,8 +12,21 @@ import { useUploadQueue, type UploadItem } from "@/stores/uploadQueue";
 const MAX_CONCURRENT = 3;
 const CHUNK_SIZE = 5 * 1024 * 1024;
 const RETRY_DELAYS = [0, 1000, 3000, 5000, 10000, 20000];
-const SFTP_POLL_MS = 400;
-const SFTP_POLL_BACKOFF_MS = 1500;
+const SFTP_POLL_MS = 200;
+const SFTP_POLL_BACKOFF_MS = 1000;
+
+// Optional QueryClient injected by the page so we can refresh the file
+// listing as soon as an upload lands on the VPS.
+let queryClient: QueryClient | null = null;
+export function setUploadQueryClient(qc: QueryClient): void {
+  queryClient = qc;
+}
+function invalidateTargetPath(item: UploadItem): void {
+  if (!queryClient) return;
+  queryClient.invalidateQueries({
+    queryKey: ["files", item.sessionId, item.targetPath],
+  });
+}
 
 const uploads = new Map<string, tus.Upload>();
 const pollTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -45,10 +59,16 @@ function maybeStartNext(): void {
 }
 
 function pollSftp(itemId: string, transferId: string): void {
+  // Safety net: if backend's transfer_progress entry vanished (cleanup),
+  // give up after a fixed number of "not_found" responses instead of polling
+  // forever. Also bail out after 60s of consecutive errors.
+  let notFoundStreak = 0;
+  let errorStreak = 0;
   const tick = async () => {
     try {
       const res = await fetch(
         `${env.apiUrl}${endpoints.ssh.transferProgress}?transfer_id=${encodeURIComponent(transferId)}`,
+        { credentials: "include" },
       );
       const data = (await res.json()) as {
         status: string;
@@ -56,16 +76,21 @@ function pollSftp(itemId: string, transferId: string): void {
         total?: number;
         error?: string;
       };
-      const { update } = useUploadQueue.getState();
+      const { items, update } = useUploadQueue.getState();
+      const item = items[itemId];
+
+      errorStreak = 0;
 
       if (data.status === "uploading") {
+        notFoundStreak = 0;
         update(itemId, {
           bytesUploaded: data.loaded ?? 0,
-          totalBytes: data.total ?? 0,
+          totalBytes: data.total ?? item?.totalBytes ?? 0,
         });
         pollTimers.set(itemId, setTimeout(tick, SFTP_POLL_MS));
       } else if (data.status === "done") {
         update(itemId, { status: "done" });
+        if (item) invalidateTargetPath(item);
         uploads.delete(itemId);
         pollTimers.delete(itemId);
         maybeStartNext();
@@ -78,15 +103,29 @@ function pollSftp(itemId: string, transferId: string): void {
         pollTimers.delete(itemId);
         maybeStartNext();
       } else if (data.status === "not_found") {
-        // Backend already cleaned up after success. Treat as done.
-        update(itemId, { status: "done" });
-        uploads.delete(itemId);
-        pollTimers.delete(itemId);
-        maybeStartNext();
+        // Backend may have cleaned up after success. Try ~3 more times in
+        // case we polled before the entry was created, then assume done.
+        notFoundStreak += 1;
+        if (notFoundStreak >= 3) {
+          update(itemId, { status: "done" });
+          if (item) invalidateTargetPath(item);
+          uploads.delete(itemId);
+          pollTimers.delete(itemId);
+          maybeStartNext();
+        } else {
+          pollTimers.set(itemId, setTimeout(tick, SFTP_POLL_MS));
+        }
       } else {
         pollTimers.set(itemId, setTimeout(tick, SFTP_POLL_MS));
       }
     } catch {
+      errorStreak += 1;
+      if (errorStreak > 30) {
+        const { update } = useUploadQueue.getState();
+        update(itemId, { status: "error", error: "Lost progress connection" });
+        pollTimers.delete(itemId);
+        return;
+      }
       pollTimers.set(itemId, setTimeout(tick, SFTP_POLL_BACKOFF_MS));
     }
   };
@@ -129,13 +168,18 @@ function buildUpload(item: UploadItem): tus.Upload {
       const url = inst?.url ?? "";
       const transferId =
         url.split("?")[0].split("/").filter(Boolean).pop() ?? "";
-      const { update } = useUploadQueue.getState();
+      const { items, update } = useUploadQueue.getState();
       update(id, {
         status: "sftp",
         transferId,
         bytesUploaded: file.size,
         totalBytes: file.size,
       });
+      // Browser→backend done. Backend SFTP push usually finishes within
+      // 100–1000ms. Refresh the file list eagerly so the row appears as
+      // soon as the file lands; SFTP polling still completes the tray UI.
+      const item = items[id];
+      if (item) invalidateTargetPath(item);
       if (transferId) {
         pollSftp(id, transferId);
       } else {
