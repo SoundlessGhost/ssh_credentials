@@ -86,9 +86,6 @@ export function AppShell({
   const terminalOpen = useTerminalUi((s) => s.open);
   const setTerminalOpen = useTerminalUi((s) => s.setOpen);
   const toggleTerminal = useTerminalUi((s) => s.toggle);
-  const terminalMaximized = useTerminalUi((s) => s.maximized);
-  const toggleMaximize = useTerminalUi((s) => s.toggleMaximize);
-  const setMaximized = useTerminalUi((s) => s.setMaximized);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // VS-Code-style Ctrl+` (backtick) toggles the terminal panel.
@@ -244,94 +241,41 @@ export function AppShell({
           {sidebar}
         </aside>
         <div className="flex flex-1 flex-col overflow-hidden">
-          <ResizablePanelGroup
-            orientation="vertical"
-            className="flex-1"
-            key={`vstack-${terminalOpen ? "open" : "closed"}-${terminalMaximized ? "max" : "norm"}`}
-          >
-            <ResizablePanel
-              defaultSize={
-                terminalOpen ? (terminalMaximized ? 5 : 55) : 100
-              }
-              minSize={5}
-            >
-              <div className="flex h-full flex-col overflow-hidden">
-                {actionBar}
-                <main className="flex-1 overflow-hidden">{filePane}</main>
-              </div>
-            </ResizablePanel>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {actionBar}
+            <main className="flex-1 overflow-hidden">{filePane}</main>
+          </div>
 
-            {terminalOpen && (
-              <>
-                <ResizableHandle
-                  withHandle
-                  className="!h-2 cursor-ns-resize bg-border transition-colors hover:bg-primary/40 active:bg-primary data-[resize-handle-state=drag]:bg-primary"
-                />
-                <ResizablePanel
-                  defaultSize={terminalMaximized ? 95 : 45}
-                  minSize={15}
-                  maxSize={95}
-                >
-                  <section className="flex h-full flex-col border-t bg-card">
-                    <div className="flex h-9 items-center justify-between border-b px-2">
-                      <div className="flex items-center gap-2 text-xs font-medium">
-                        <TerminalIcon className="h-3.5 w-3.5" />
-                        Terminal
-                      </div>
-                      <div className="flex items-center gap-0.5">
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={toggleMaximize}
-                              aria-label={
-                                terminalMaximized
-                                  ? "Restore terminal"
-                                  : "Maximize terminal"
-                              }
-                            >
-                              {terminalMaximized ? (
-                                <Minimize2 className="h-3.5 w-3.5" />
-                              ) : (
-                                <Maximize2 className="h-3.5 w-3.5" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {terminalMaximized
-                              ? "Restore"
-                              : "Maximize (fill main pane)"}
-                          </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => {
-                                setMaximized(false);
-                                setTerminalOpen(false);
-                              }}
-                              aria-label="Close terminal"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Close terminal</TooltipContent>
-                        </Tooltip>
-                      </div>
-                    </div>
-                    <div className="flex-1 overflow-hidden">
-                      {terminal ?? <TerminalPlaceholder />}
-                    </div>
-                  </section>
-                </ResizablePanel>
-              </>
-            )}
-          </ResizablePanelGroup>
+          {terminalOpen && (
+            <section
+              className="flex shrink-0 flex-col border-t bg-card"
+              style={{ height: "500px" }}
+            >
+              <div className="flex h-9 shrink-0 items-center justify-between border-b px-2">
+                <div className="flex items-center gap-2 text-xs font-medium">
+                  <TerminalIcon className="h-3.5 w-3.5" />
+                  Terminal
+                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => setTerminalOpen(false)}
+                      aria-label="Close terminal"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Close terminal (Ctrl+`)</TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                {terminal ?? <TerminalPlaceholder />}
+              </div>
+            </section>
+          )}
         </div>
       </div>
 

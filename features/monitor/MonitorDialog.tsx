@@ -74,7 +74,7 @@ export function MonitorDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl">
+      <DialogContent className="flex h-[85vh] max-h-[85vh] flex-col gap-3 sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Activity className="h-4 w-4 text-primary" />
@@ -143,7 +143,7 @@ export function MonitorDialog() {
             </div>
 
             {/* Top processes */}
-            <div className="mt-2 flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 flex-1 flex-col">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Top processes (by memory)
@@ -152,7 +152,7 @@ export function MonitorDialog() {
                   <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                 )}
               </div>
-              <ScrollArea className="flex-1 rounded-md border">
+              <ScrollArea className="min-h-0 flex-1 rounded-md border">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 border-b bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
                     <tr>
