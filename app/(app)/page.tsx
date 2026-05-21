@@ -19,6 +19,7 @@ import { PropertiesDialog } from "@/features/files/PropertiesDialog";
 import { NewItemDialog } from "@/features/files/NewItemDialog";
 import { useFileActions } from "@/features/files/useFileActions";
 import { UploadTray } from "@/features/upload/UploadTray";
+import { CompressTray } from "@/features/files/CompressTray";
 import {
   setUploadQueryClient,
   uploadManager,
@@ -118,7 +119,10 @@ export default function Home() {
         }
         uploadTray={
           <ErrorBoundary fallback={<div />}>
-            <UploadTray />
+            <div className="flex flex-col gap-2">
+              <CompressTray />
+              <UploadTray />
+            </div>
           </ErrorBoundary>
         }
       />

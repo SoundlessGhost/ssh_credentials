@@ -18,6 +18,8 @@ export const endpoints = {
     processes: "/api/ssh/processes",
     killProcess: "/api/ssh/kill-process",
     zip: "/api/ssh/zip",
+    zipProgress: "/api/ssh/zip-progress",
+    zipCancel: "/api/ssh/zip-cancel",
     unzip: "/api/ssh/unzip",
     transferProgress: "/api/ssh/transfer-progress",
     transferCancel: "/api/ssh/transfer-cancel",

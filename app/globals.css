@@ -160,6 +160,12 @@ body {
   animation: slide-up 0.3s ease-out;
 }
 
+/* Indeterminate progress bar (compress tray, etc.) */
+@keyframes slide {
+  0%   { left: -33%; }
+  100% { left: 100%; }
+}
+
 /* Custom Scrollbar - Light Mode */
 ::-webkit-scrollbar {
   width: 8px;

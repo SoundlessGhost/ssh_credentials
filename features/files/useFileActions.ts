@@ -14,6 +14,7 @@ import { useFileDialogs } from "@/stores/fileDialogs";
 import { useQuickAccess } from "@/stores/quickAccess";
 import { useTerminalCommand } from "@/stores/terminalCommand";
 import { useTerminalUi } from "@/stores/terminalUi";
+import { startCompress } from "@/features/files/compressManager";
 import type { FileItem } from "@/hooks/useFiles";
 
 export type CompressFormat = "zip" | "tar.gz" | "7z";
@@ -265,26 +266,22 @@ export function useFileActions(items: FileItem[]) {
       }
       const dest = joinPath(currentPath, trimmed);
       try {
-        const res = await api<{ success: boolean; path: string; format: string }>(
-          endpoints.ssh.zip,
-          {
-            method: "POST",
-            json: {
-              session_id: sessionId,
-              paths: targets.map((t) => t.path),
-              dest_path: dest,
-            },
-          },
-        );
-        toast.success(`Created ${res.path}`);
-        invalidate();
+        await startCompress({
+          sessionId,
+          paths: targets.map((t) => t.path),
+          destPath: dest,
+          destName: trimmed,
+          qc,
+          invalidatePath: currentPath,
+        });
+        toast.message(`Compressing ${trimmed}…`);
         dialogs.closeCompress();
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Compress failed";
         toast.error(msg);
       }
     },
-    [sessionId, currentPath, invalidate, dialogs],
+    [sessionId, currentPath, qc, dialogs],
   );
 
   const extract = useCallback(
@@ -335,25 +332,21 @@ export function useFileActions(items: FileItem[]) {
       const destName = `${baseName}.${ext}`;
       const dest = joinPath(currentPath, destName);
       try {
-        const res = await api<{ path: string; format: string }>(
-          endpoints.ssh.zip,
-          {
-            method: "POST",
-            json: {
-              session_id: sessionId,
-              paths: targets.map((t) => t.path),
-              dest_path: dest,
-            },
-          },
-        );
-        toast.success(`Created ${res.path}`);
-        invalidate();
+        await startCompress({
+          sessionId,
+          paths: targets.map((t) => t.path),
+          destPath: dest,
+          destName,
+          qc,
+          invalidatePath: currentPath,
+        });
+        toast.message(`Compressing ${destName}…`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Compress failed";
         toast.error(msg);
       }
     },
-    [sessionId, currentPath, invalidate],
+    [sessionId, currentPath, qc],
   );
 
   /** Queue `cd <path>` into the terminal; caller is responsible for
