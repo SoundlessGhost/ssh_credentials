@@ -1,9 +1,16 @@
-// UI state for file ops that need a dialog (rename, delete, compress).
-// Mounted once at page level; opened by either the action ribbon or the
-// right-click context menu.
+// UI state for file ops that need a dialog (rename, delete, compress,
+// new-item). Mounted once at page level; opened by either the action
+// ribbon or the right-click context menu.
 
 import { create } from "zustand";
 import type { FileItem } from "@/hooks/useFiles";
+
+export type NewItemRequest = {
+  kind: "folder" | "file";
+  label: string; // dialog title, e.g. "Text Document"
+  defaultName: string;
+  content: string; // initial file content; ignored for folders
+};
 
 type FileDialogsState = {
   renameTarget: FileItem | null;
@@ -11,6 +18,7 @@ type FileDialogsState = {
   compressTargets: FileItem[];
   editorTarget: FileItem | null;
   propertiesTarget: FileItem | null;
+  newItem: NewItemRequest | null;
 
   openRename: (item: FileItem) => void;
   closeRename: () => void;
@@ -26,6 +34,9 @@ type FileDialogsState = {
 
   openProperties: (item: FileItem) => void;
   closeProperties: () => void;
+
+  openNewItem: (req: NewItemRequest) => void;
+  closeNewItem: () => void;
 };
 
 export const useFileDialogs = create<FileDialogsState>((set) => ({
@@ -49,4 +60,8 @@ export const useFileDialogs = create<FileDialogsState>((set) => ({
   propertiesTarget: null,
   openProperties: (propertiesTarget) => set({ propertiesTarget }),
   closeProperties: () => set({ propertiesTarget: null }),
+
+  newItem: null,
+  openNewItem: (newItem) => set({ newItem }),
+  closeNewItem: () => set({ newItem: null }),
 }));

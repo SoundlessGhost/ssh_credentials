@@ -9,12 +9,10 @@ import {
   ArchiveRestore,
   ClipboardCopy,
   ClipboardPaste,
-  Code2,
   Copy,
   Download,
   Eye,
   FileCode,
-  FilePlus,
   FileText,
   FolderOpen,
   FolderPlus,
@@ -24,7 +22,6 @@ import {
   LayoutList,
   Link as LinkIcon,
   List as ListIcon,
-  MoreHorizontal,
   Pencil,
   Pin,
   PinOff,
@@ -39,8 +36,6 @@ import {
   Type,
   Upload,
 } from "lucide-react";
-import { toast } from "sonner";
-
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -61,10 +56,7 @@ import { useFileActions } from "@/features/files/useFileActions";
 import { useConnection } from "@/stores/connection";
 import { useUiFilters, type ViewMode } from "@/stores/uiFilters";
 import { useTerminalCommand } from "@/stores/terminalCommand";
-import { useFileDialogs } from "@/stores/fileDialogs";
-import { api } from "@/lib/api/client";
-import { endpoints } from "@/lib/api/endpoints";
-import { useQueryClient } from "@tanstack/react-query";
+import { useFileDialogs, type NewItemRequest } from "@/stores/fileDialogs";
 
 const ARCHIVE_EXTS = [".zip", ".tar.gz", ".tgz", ".tar", ".gz", ".rar", ".7z"];
 function isArchive(name: string): boolean {
@@ -314,13 +306,19 @@ export function EmptyAreaContextMenu({
   const setGroupBy = useUiFilters((s) => s.setGroupBy);
   const enqueueTerminal = useTerminalCommand((s) => s.enqueue);
   const openProperties = useFileDialogs((s) => s.openProperties);
-  const qc = useQueryClient();
+  const openNewItem = useFileDialogs((s) => s.openNewItem);
 
-  const openWithCode = () => {
-    if (!sessionId) return;
-    enqueueTerminal(`code ${quoteShell(currentPath)}\n`);
+  // Spawn the unified New-item dialog with the requested template.
+  const newFile = (req: NewItemRequest) => openNewItem(req);
+
+  // Right-clicking the empty area then choosing "Open in Terminal" should
+  // behave like the same item on a folder row — i.e. send `cd <current>`.
+  // The shortcut Ctrl+` still toggles the panel without a `cd`.
+  const openTerminalHere = () => {
+    if (sessionId && currentPath) {
+      enqueueTerminal(`cd ${quoteShell(currentPath)}\n`);
+    }
     onOpenTerminal?.();
-    toast.message(`Sent: code ${currentPath}`);
   };
 
   const propertiesOfFolder = () => {
@@ -335,62 +333,6 @@ export function EmptyAreaContextMenu({
       modified: "—",
       permissions: "—",
     });
-  };
-
-  const newTextFile = async () => {
-    if (!sessionId) return;
-    const fname = window.prompt(
-      "New text document — file name (without path):",
-      "New Text Document.txt",
-    );
-    if (!fname) return;
-    const trimmed = fname.trim();
-    if (!trimmed || trimmed.includes("/")) {
-      toast.error("Invalid name");
-      return;
-    }
-    const dest = joinPath(currentPath, trimmed);
-    try {
-      await api(endpoints.ssh.writeFile, {
-        method: "POST",
-        json: { session_id: sessionId, path: dest, content: "" },
-      });
-      toast.success(`Created ${trimmed}`);
-      qc.invalidateQueries({ queryKey: ["files", sessionId, currentPath] });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create failed");
-    }
-  };
-
-  const newShortcut = async () => {
-    if (!sessionId) return;
-    const target = window.prompt(
-      "Symlink target — absolute path on the VPS:",
-      "/",
-    );
-    if (!target) return;
-    const linkName = window.prompt(
-      "Symlink name (in current folder):",
-      basename(target.trim()) + " - Shortcut",
-    );
-    if (!linkName) return;
-    const trimmed = linkName.trim();
-    if (!trimmed || trimmed.includes("/")) {
-      toast.error("Invalid name");
-      return;
-    }
-    const linkPath = joinPath(currentPath, trimmed);
-    const cmd = `ln -s ${quoteShell(target.trim())} ${quoteShell(linkPath)}`;
-    try {
-      await api(endpoints.ssh.execute, {
-        method: "POST",
-        json: { session_id: sessionId, command: cmd },
-      });
-      toast.success(`Created shortcut ${trimmed}`);
-      qc.invalidateQueries({ queryKey: ["files", sessionId, currentPath] });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Shortcut failed");
-    }
   };
 
   return (
@@ -509,51 +451,90 @@ export function EmptyAreaContextMenu({
             <ContextMenuItem onSelect={onNewFolder}>
               <FolderPlus className="mr-2 h-3.5 w-3.5" /> Folder
             </ContextMenuItem>
-            <ContextMenuItem onSelect={newShortcut}>
-              <LinkIcon className="mr-2 h-3.5 w-3.5" /> Shortcut (symlink)
+            <ContextMenuItem
+              onSelect={() =>
+                newFile({
+                  kind: "file",
+                  label: "shortcut",
+                  defaultName: "Shortcut.lnk",
+                  content: "",
+                })
+              }
+            >
+              <LinkIcon className="mr-2 h-3.5 w-3.5" /> Shortcut
             </ContextMenuItem>
             <ContextMenuSeparator />
             <ContextMenuItem
-              onSelect={() => newFileWith(sessionId, currentPath, qc, "Untitled.txt", "")}
+              onSelect={() =>
+                newFile({
+                  kind: "file",
+                  label: "Text Document",
+                  defaultName: "New Text Document.txt",
+                  content: "",
+                })
+              }
             >
               <FileText className="mr-2 h-3.5 w-3.5" /> Text Document
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => newFileWith(sessionId, currentPath, qc, "Untitled.md", "")}
+              onSelect={() =>
+                newFile({
+                  kind: "file",
+                  label: "Markdown Document",
+                  defaultName: "New Document.md",
+                  content: "",
+                })
+              }
             >
               <FileText className="mr-2 h-3.5 w-3.5" /> Markdown Document
             </ContextMenuItem>
             <ContextMenuItem
               onSelect={() =>
-                newFileWith(
-                  sessionId,
-                  currentPath,
-                  qc,
-                  "script.sh",
-                  "#!/usr/bin/env bash\n",
-                )
+                newFile({
+                  kind: "file",
+                  label: "Shell script",
+                  defaultName: "script.sh",
+                  content: "#!/usr/bin/env bash\n",
+                })
               }
             >
               <FileCode className="mr-2 h-3.5 w-3.5" /> Shell script (.sh)
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => newFileWith(sessionId, currentPath, qc, "Untitled.py", "")}
+              onSelect={() =>
+                newFile({
+                  kind: "file",
+                  label: "Python file",
+                  defaultName: "Untitled.py",
+                  content: "",
+                })
+              }
             >
               <FileText className="mr-2 h-3.5 w-3.5" /> Python file (.py)
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => newFileWith(sessionId, currentPath, qc, "Untitled.json", "{}\n")}
+              onSelect={() =>
+                newFile({
+                  kind: "file",
+                  label: "JSON file",
+                  defaultName: "Untitled.json",
+                  content: "{}\n",
+                })
+              }
             >
               <FileText className="mr-2 h-3.5 w-3.5" /> JSON file
             </ContextMenuItem>
             <ContextMenuItem
-              onSelect={() => newFileWith(sessionId, currentPath, qc, ".env", "")}
+              onSelect={() =>
+                newFile({
+                  kind: "file",
+                  label: ".env file",
+                  defaultName: ".env",
+                  content: "",
+                })
+              }
             >
               <FileText className="mr-2 h-3.5 w-3.5" /> .env file
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem onSelect={newTextFile}>
-              <FilePlus className="mr-2 h-3.5 w-3.5" /> Custom file…
             </ContextMenuItem>
           </ContextMenuSubContent>
         </ContextMenuSub>
@@ -564,12 +545,9 @@ export function EmptyAreaContextMenu({
 
         <ContextMenuSeparator />
 
-        <ContextMenuItem onSelect={onOpenTerminal}>
+        <ContextMenuItem onSelect={openTerminalHere}>
           <TerminalIcon className="mr-2 h-3.5 w-3.5" /> Open in Terminal
           <ContextMenuShortcut>Ctrl+`</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={openWithCode} disabled={!sessionId}>
-          <Code2 className="mr-2 h-3.5 w-3.5" /> Open with Code
         </ContextMenuItem>
 
         <ContextMenuSeparator />
@@ -577,11 +555,6 @@ export function EmptyAreaContextMenu({
         <ContextMenuItem onSelect={propertiesOfFolder}>
           <Info className="mr-2 h-3.5 w-3.5" /> Properties
           <ContextMenuShortcut>Alt+Enter</ContextMenuShortcut>
-        </ContextMenuItem>
-
-        <ContextMenuItem disabled>
-          <MoreHorizontal className="mr-2 h-3.5 w-3.5" /> Show more options
-          <ContextMenuShortcut>Shift+F10</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -591,38 +564,6 @@ export function EmptyAreaContextMenu({
 // =====================================================================
 //  helpers
 // =====================================================================
-
-async function newFileWith(
-  sessionId: string | null,
-  currentPath: string,
-  qc: ReturnType<typeof useQueryClient>,
-  defaultName: string,
-  content: string,
-) {
-  if (!sessionId) return;
-  const name = window.prompt("File name:", defaultName);
-  if (!name) return;
-  const trimmed = name.trim();
-  if (!trimmed || trimmed.includes("/")) {
-    toast.error("Invalid name");
-    return;
-  }
-  const dest = joinPath(currentPath, trimmed);
-  try {
-    await api(endpoints.ssh.writeFile, {
-      method: "POST",
-      json: { session_id: sessionId, path: dest, content },
-    });
-    toast.success(`Created ${trimmed}`);
-    qc.invalidateQueries({ queryKey: ["files", sessionId, currentPath] });
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : "Create failed");
-  }
-}
-
-function joinPath(dir: string, name: string): string {
-  return `${dir.replace(/\/+$/, "")}/${name}`.replace(/\/+/g, "/");
-}
 
 function basename(p: string): string {
   const trimmed = p.replace(/\/+$/, "");

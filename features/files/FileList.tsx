@@ -48,8 +48,19 @@ export function FileList({
   const selected = useFileSelection((s) => s.selected);
   const setSelectedStore = useFileSelection((s) => s.setSelected);
   const openEditor = useFileDialogs((s) => s.openEditor);
+  const openNewItem = useFileDialogs((s) => s.openNewItem);
   const setTerminalOpen = useTerminalUi((s) => s.setOpen);
   const openTerminal = useCallback(() => setTerminalOpen(true), [setTerminalOpen]);
+  const newFolder = useCallback(
+    () =>
+      openNewItem({
+        kind: "folder",
+        label: "Folder",
+        defaultName: "New folder",
+        content: "",
+      }),
+    [openNewItem],
+  );
   const isIconMode =
     viewMode === "small-icons" ||
     viewMode === "medium-icons" ||
@@ -359,7 +370,7 @@ export function FileList({
       items={sortedItemsForKeyboard}
       onUploadClick={onUploadClick}
       onRefresh={refresh}
-      onNewFolder={onNewFolderClick}
+      onNewFolder={onNewFolderClick ?? newFolder}
       onOpenTerminal={openTerminal}
     >
     <div

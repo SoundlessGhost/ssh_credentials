@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "VPS Manager",
+  title: "VPS Manager | A Windows Explorer UI for Linux VPS",
   description: "Manage your Linux VPS files via a Windows Explorer UI.",
 };
 
