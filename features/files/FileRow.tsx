@@ -3,6 +3,7 @@
 import React from "react";
 import { FileIcon } from "@/features/files/FileIcon";
 import type { FileItem } from "@/hooks/useFiles";
+import { startFolderDrag } from "@/features/files/folderDrag";
 
 type Props = {
   item: FileItem;
@@ -21,6 +22,7 @@ export const FileRow = React.memo(function FileRow({
   onDoubleClick,
   onContextMenu,
 }: Props) {
+  const isFolder = item.type === "folder";
   return (
     <div
       role="row"
@@ -28,6 +30,10 @@ export const FileRow = React.memo(function FileRow({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
+      draggable={isFolder}
+      onDragStart={(e) => {
+        if (isFolder) startFolderDrag(e, item);
+      }}
       className={`grid h-8 cursor-default select-none grid-cols-[28px_minmax(0,1fr)_70px] items-center gap-2 px-3 text-xs md:grid-cols-[28px_minmax(0,1fr)_90px_150px_110px] ${
         selected
           ? "bg-primary/10 text-foreground"

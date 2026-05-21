@@ -3,6 +3,7 @@
 import React from "react";
 import type { FileItem } from "@/hooks/useFiles";
 import { FileIcon } from "@/features/files/FileIcon";
+import { startFolderDrag } from "@/features/files/folderDrag";
 
 const SIZE_MAP = {
   "small-icons": {
@@ -57,12 +58,17 @@ export function FileGrid({
       {items.map((item, idx) => {
         const isSelected = selectedPaths.has(item.path);
         const isActive = activeIdx === idx;
+        const isFolder = item.type === "folder";
         const tile = (
           <button
             type="button"
             onClick={(e) => onItemClick(idx, e)}
             onDoubleClick={() => onItemDoubleClick(item)}
             onContextMenu={() => onItemContextMenu(idx)}
+            draggable={isFolder}
+            onDragStart={(e) => {
+              if (isFolder) startFolderDrag(e, item);
+            }}
             className={`group flex flex-col items-center gap-1 rounded-md p-2 text-center transition-colors ${
               isSelected ? "bg-primary/15" : "hover:bg-accent/60"
             } ${isActive ? "ring-1 ring-primary/40" : ""}`}

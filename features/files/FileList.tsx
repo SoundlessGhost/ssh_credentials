@@ -22,8 +22,6 @@ import { useQueryClient } from "@tanstack/react-query";
 
 const ROW_HEIGHT = 32;
 
-type SortKey = "name" | "size" | "modified";
-
 type Props = {
   // Drop handler set in step 10 — for now we surface dropped files to the
   // parent (which doesn't yet wire them to the upload queue).
@@ -43,6 +41,10 @@ export function FileList({
   const goUp = useConnection((s) => s.goUp);
   const searchQuery = useUiFilters((s) => s.searchQuery);
   const viewMode = useUiFilters((s) => s.viewMode);
+  const sortKey = useUiFilters((s) => s.sortKey);
+  const sortDir = useUiFilters((s) => s.sortDir);
+  const toggleSortStore = useUiFilters((s) => s.toggleSort);
+  const groupBy = useUiFilters((s) => s.groupBy);
   const selected = useFileSelection((s) => s.selected);
   const setSelectedStore = useFileSelection((s) => s.setSelected);
   const openEditor = useFileDialogs((s) => s.openEditor);
@@ -63,21 +65,41 @@ export function FileList({
   const items = useMemo<FileItem[]>(() => data?.items ?? [], [data]);
   const actions = useFileActions(items);
 
-  // Sorting (folders first always)
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
+  // Sorting (folders first always). When groupBy != "none", items are
+  // primarily ordered by group bucket; secondary order is the active sort.
   const sortedItems = useMemo(() => {
     const arr = [...items];
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmpName = (a: FileItem, b: FileItem) =>
+      a.name.toLowerCase().localeCompare(b.name.toLowerCase()) * dir;
+    const cmpSize = (a: FileItem, b: FileItem) => (a.size - b.size) * dir;
+    const cmpModified = (a: FileItem, b: FileItem) =>
+      a.modified.localeCompare(b.modified) * dir;
+    const cmpType = (a: FileItem, b: FileItem) => {
+      const at = a.name.split(".").pop() ?? "";
+      const bt = b.name.split(".").pop() ?? "";
+      return at.localeCompare(bt) * dir;
+    };
+    const cmpSort = (a: FileItem, b: FileItem) =>
+      sortKey === "size"
+        ? cmpSize(a, b)
+        : sortKey === "modified"
+          ? cmpModified(a, b)
+          : sortKey === "type"
+            ? cmpType(a, b)
+            : cmpName(a, b);
+
     arr.sort((a, b) => {
       if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-      const dir = sortDir === "asc" ? 1 : -1;
-      if (sortKey === "size") return (a.size - b.size) * dir;
-      if (sortKey === "modified") return a.modified.localeCompare(b.modified) * dir;
-      return a.name.toLowerCase().localeCompare(b.name.toLowerCase()) * dir;
+      if (groupBy !== "none") {
+        const ga = bucketFor(a, groupBy);
+        const gb = bucketFor(b, groupBy);
+        if (ga !== gb) return ga.localeCompare(gb);
+      }
+      return cmpSort(a, b);
     });
     return arr;
-  }, [items, sortKey, sortDir]);
+  }, [items, sortKey, sortDir, groupBy]);
 
   // Apply search filter after sort so column-sort still works inside results
   const sortedItemsForKeyboard = useMemo(() => {
@@ -355,21 +377,21 @@ export function FileList({
           label="Name"
           active={sortKey === "name"}
           dir={sortDir}
-          onClick={() => toggleSort("name", sortKey, sortDir, setSortKey, setSortDir)}
+          onClick={() => toggleSortStore("name")}
         />
         <SortHeader
           label="Size"
           align="right"
           active={sortKey === "size"}
           dir={sortDir}
-          onClick={() => toggleSort("size", sortKey, sortDir, setSortKey, setSortDir)}
+          onClick={() => toggleSortStore("size")}
         />
         <span className="hidden md:block">
           <SortHeader
             label="Modified"
             active={sortKey === "modified"}
             dir={sortDir}
-            onClick={() => toggleSort("modified", sortKey, sortDir, setSortKey, setSortDir)}
+            onClick={() => toggleSortStore("modified")}
           />
         </span>
         <span className="hidden md:block">Permissions</span>
@@ -583,16 +605,32 @@ function SortHeader({
   );
 }
 
-function toggleSort(
-  next: SortKey,
-  current: SortKey,
-  currentDir: "asc" | "desc",
-  setKey: (k: SortKey) => void,
-  setDir: (d: "asc" | "desc") => void,
-) {
-  if (current === next) setDir(currentDir === "asc" ? "desc" : "asc");
-  else {
-    setKey(next);
-    setDir("asc");
+// Bucket label used for the secondary group-by sort. Returned strings
+// also work as visible section headers later if we render them.
+function bucketFor(
+  item: FileItem,
+  groupBy: "none" | "type" | "size" | "modified",
+): string {
+  if (groupBy === "type") {
+    if (item.type === "folder") return "0_Folders";
+    const dot = item.name.lastIndexOf(".");
+    if (dot < 0) return "z_Other";
+    return `t_${item.name.slice(dot + 1).toLowerCase()}`;
   }
+  if (groupBy === "size") {
+    if (item.type === "folder") return "0_Folders";
+    if (item.size < 1024 * 1024) return "1_Small (<1 MB)";
+    if (item.size < 100 * 1024 * 1024) return "2_Medium (1–100 MB)";
+    if (item.size < 1024 * 1024 * 1024) return "3_Large (100 MB–1 GB)";
+    return "4_Huge (>1 GB)";
+  }
+  if (groupBy === "modified") {
+    // Lexicographic on the ISO-ish modified string: take the leading
+    // YYYY-MM if present, else the raw value.
+    const m = /^(\d{4})-(\d{2})/.exec(item.modified);
+    if (m) return `${m[1]}-${m[2]}`;
+    return item.modified.slice(0, 7) || "unknown";
+  }
+  return "";
 }
+

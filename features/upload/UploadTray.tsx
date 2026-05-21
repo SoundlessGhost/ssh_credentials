@@ -73,7 +73,7 @@ export function UploadTray() {
       <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
         <UploadIcon className="h-4 w-4 text-primary" />
         <span className="text-xs font-semibold">
-          Uploads · {done}/{list.length} done
+          Uploads · {done}/{list.length} Done
           {active > 0 && ` · ${active} active`}
           {failed > 0 && ` · ${failed} failed`}
         </span>

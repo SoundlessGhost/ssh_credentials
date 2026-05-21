@@ -48,6 +48,10 @@ import { useConnection } from "@/stores/connection";
 import { useHostKeyConfirm } from "@/stores/hostKeyConfirm";
 import { useQuickAccess } from "@/stores/quickAccess";
 import { ConnectionDialog } from "@/features/connection/ConnectionDialog";
+import {
+  hasFolderDrag,
+  readFolderDrag,
+} from "@/features/files/folderDrag";
 
 export function ServerSidebar() {
   const { data: servers = [], isLoading } = useServers();
@@ -313,10 +317,45 @@ function QuickAccessSection() {
   const pins = useQuickAccess((s) => s.pins).filter(
     (p) => p.serverId === serverId,
   );
+  const pin = useQuickAccess((s) => s.pin);
+  const isPinned = useQuickAccess((s) => s.isPinned);
   const unpin = useQuickAccess((s) => s.unpin);
+  const [dropActive, setDropActive] = useState(false);
+
+  const onDragOver = (e: React.DragEvent) => {
+    if (!hasFolderDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  };
+  const onDragLeave = () => setDropActive(false);
+  const onDrop = (e: React.DragEvent) => {
+    setDropActive(false);
+    const payload = readFolderDrag(e);
+    if (!payload) return;
+    e.preventDefault();
+    if (isPinned(serverId, payload.path)) {
+      toast.message(`${payload.name} already pinned`);
+      return;
+    }
+    pin({
+      serverId,
+      path: payload.path,
+      name: payload.name,
+      pinnedAt: Date.now(),
+    });
+    toast.success(`Pinned ${payload.name}`);
+  };
 
   return (
-    <div className="px-3 pt-3">
+    <div
+      className={`px-3 pt-3 transition-colors ${
+        dropActive ? "rounded-md bg-primary/10 ring-1 ring-primary/40" : ""
+      }`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div className="flex items-center justify-between px-1 pb-1">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
           Quick Access
@@ -330,7 +369,7 @@ function QuickAccessSection() {
       {pins.length === 0 ? (
         <div className="rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground">
           <Star className="mr-1.5 inline h-3 w-3" />
-          Right-click any folder → Pin to Quick Access.
+          Drag a folder here, or right-click → Pin to Quick Access.
         </div>
       ) : (
         <ul className="space-y-0.5">
