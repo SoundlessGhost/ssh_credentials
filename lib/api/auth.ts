@@ -37,3 +37,17 @@ export function refresh() {
 export function me() {
   return api<AuthUser>("/auth/me");
 }
+
+export function changePassword(
+  old_password: string,
+  new_password: string,
+) {
+  return api<null>("/auth/change-password", {
+    method: "POST",
+    json: { old_password, new_password },
+  });
+}
+
+export function logoutAll() {
+  return api<null>("/auth/logout-all", { method: "POST" });
+}

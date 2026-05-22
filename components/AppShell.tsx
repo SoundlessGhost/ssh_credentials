@@ -63,6 +63,7 @@ import { useConnection } from "@/stores/connection";
 import { useUiFilters } from "@/stores/uiFilters";
 import { useTerminalUi } from "@/stores/terminalUi";
 import { useMonitorUi } from "@/stores/monitorUi";
+import { useSettingsUi } from "@/stores/settingsUi";
 import { useSystemInfo } from "@/hooks/useSystem";
 import { useLogout, useMe } from "@/hooks/useAuth";
 
@@ -521,7 +522,7 @@ function UserMenu() {
             </Link>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem disabled>
+        <DropdownMenuItem onSelect={() => useSettingsUi.getState().setOpen(true)}>
           <Settings className="mr-2 h-3.5 w-3.5" /> Settings
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onLogout} className="text-destructive focus:text-destructive">

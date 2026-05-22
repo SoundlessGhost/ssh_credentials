@@ -27,6 +27,7 @@ import {
 import { Terminal } from "@/features/terminal/Terminal";
 import { HostKeyConfirmDialog } from "@/features/connection/HostKeyConfirmDialog";
 import { MonitorDialog } from "@/features/monitor/MonitorDialog";
+import { SettingsDialog } from "@/features/settings/SettingsDialog";
 
 function FileDialogsMount() {
   const sessionId = useConnection((s) => s.sessionId);
@@ -130,6 +131,7 @@ export default function Home() {
       <FileDialogsMount />
       <HostKeyConfirmDialog />
       <MonitorDialog />
+      <SettingsDialog />
     </>
   );
 }

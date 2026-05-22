@@ -154,14 +154,14 @@ export function MonitorDialog() {
               </div>
               <ScrollArea className="min-h-0 flex-1 rounded-md border">
                 <table className="w-full text-xs">
-                  <thead className="sticky top-0 border-b bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-2 text-left">PID</th>
-                      <th className="px-3 py-2 text-right">CPU %</th>
-                      <th className="px-3 py-2 text-right">Mem %</th>
-                      <th className="px-3 py-2 text-left">Stat</th>
-                      <th className="px-3 py-2 text-left">Command</th>
-                      <th className="px-3 py-2 text-right">Action</th>
+                  <thead className="sticky top-0 z-10 text-[10px] uppercase tracking-wide text-muted-foreground shadow-sm">
+                    <tr className="border-b">
+                      <th className="bg-card px-3 py-2 text-left">PID</th>
+                      <th className="bg-card px-3 py-2 text-right">CPU %</th>
+                      <th className="bg-card px-3 py-2 text-right">Mem %</th>
+                      <th className="bg-card px-3 py-2 text-left">Stat</th>
+                      <th className="bg-card px-3 py-2 text-left">Command</th>
+                      <th className="bg-card px-3 py-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody>
