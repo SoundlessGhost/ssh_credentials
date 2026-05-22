@@ -3,6 +3,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Baseline UI scale — bumping the root font-size scales every
+ * rem-based Tailwind utility (text-xs, h-4, w-64, gaps, paddings, etc.)
+ * proportionally. 110% gives the density a 100% browser-zoom user used
+ * to need 110% zoom to read comfortably. */
+html {
+  font-size: 110%;
+}
+
 html,
 body {
   font-family: "Trebuchet MS", "Lucida Sans Unicode", "Lucida Grande",
